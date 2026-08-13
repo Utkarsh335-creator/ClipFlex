@@ -4475,4 +4475,26 @@ function moveTrack(type, dir){
 document.querySelectorAll('.track-order-btn').forEach(btn=>{
   btn.addEventListener('click', e=>{
     e.stopPropagation();
-    const row = btn.closest('.track-
+    const row = btn.closest('.track-row');
+    if (!row) return;
+    moveTrack(row.dataset.trackType, parseInt(btn.dataset.dir,10));
+  });
+});
+
+/* ===================== INIT ===================== */
+async function init(){
+  clearCanvas();
+  loadTrackOrderFromStorage();
+  applyTrackOrder();
+  renderTimeline();
+  renderInspector();
+  updateHistoryButtons();
+  startAutosave();
+  await offerAutosaveRecovery();
+}
+init();
+
+})();
+</script>
+</body>
+</html>
