@@ -1,25 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="google-site-verification" content="5UvEKeYNokX-noD96pW8hs1biB2pmGZWzklFvEFVxtI" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-    <!-- Main Title & SEO Description -->
-    <title>Fast Web Video Trimmer & Flex Editor | ClipFlex</title>
-    <meta name="description" content="Free lightweight online micro video editor to trim, crop, and edit video clips directly in your browser">
+  <!-- Main Title & SEO Description -->
+  <title>Fast Web Video Trimmer & Flex Editor | ClipFlex</title>
+  <meta name="description" content="Free lightweight online micro video editor to trim, crop, and edit video clips directly in your browser without watermarks. Try ClipFlex now!">
 
-    <!-- Social Media Preview Tags (Open Graph) -->
-    <meta property="og:title" content="ClipFlex - Free Browser-Based Video Editor">
-    <meta property="og:description" content="Trim and edit your clips instantly online. No registration required.">
+  <!-- Social Media Preview Tags (Open Graph) -->
+  <meta property="og:title" content="ClipFlex - Free Browser-Based Video Editor">
+  <meta property="og:description" content="Trim and edit your clips instantly online. No registration required.">
 
-    <!-- Vercel Speed Insights Script -->
-    <script>
-      window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
-    </script>
-    <script defer src="/_vercel/speed-insights/script.js"></script>
+  <!-- Vercel Speed Insights Script -->
+  <script>
+    window.si = window.si || function () { (window.siq = window.siq || []).push(arguments); };
+  </script>
+  <script defer src="/_vercel/speed-insights/script.js"></script>
 </head>
 <style>
+  /* ============ DESKTOP-ONLY ACCESS GATE ============ */
+  html.device-blocked #app{display:none !important;}
+  #deviceGate{
+    position:fixed;inset:0;z-index:99999;display:none;
+    align-items:center;justify-content:center;padding:24px;
+    background:var(--bg);color:var(--text);font-family:var(--sans);
+  }
+  html.device-blocked #deviceGate{display:flex;}
+  .device-gate-card{
+    width:min(560px,92vw);padding:32px 28px;text-align:center;
+    background:var(--bg-elevated);border:1px solid var(--border);
+    border-radius:var(--radius-lg);box-shadow:var(--shadow-2);
+  }
+  .device-gate-icon{
+    width:64px;height:64px;margin:0 auto 16px;border-radius:18px;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--surface-2);color:var(--accent);font-size:30px;
+  }
+  .device-gate-card h2{margin:0 0 10px;font-size:21px;}
+  .device-gate-card p{margin:0;color:var(--text-dim);font-size:13px;line-height:1.6;}
+  .device-gate-note{margin-top:14px;font-size:11px;color:var(--text-faint);}
+
   /* ============ TOKENS ============ */
   :root{
     --bg:#0C0E12;
@@ -457,6 +478,7 @@
     border:1.5px solid var(--bg-elevated);transition:transform .1s ease;
   }
   .transition-badge:hover{transform:scale(1.2);}
+  .keyframe-marker{position:absolute;top:18px;width:7px;height:7px;background:var(--amber);transform:translateX(-3.5px) rotate(45deg);z-index:4;border-radius:1px;box-shadow:0 0 0 1px rgba(0,0,0,.3);pointer-events:none;}
   .transition-badge svg{width:9px;height:9px;}
 
   #playhead{
@@ -593,6 +615,29 @@
 </style>
 </head>
 <body>
+
+<!-- Desktop-only access gate: touch capability alone is NOT used for detection, so touchscreen laptops remain supported. -->
+<script>
+(function(){
+  // IMPORTANT: Do not use maxTouchPoints or ontouchstart here. Windows touchscreen laptops must remain supported.
+  const ua = navigator.userAgent || '';
+  const platform = navigator.platform || '';
+  const mobileUA = /Android|webOS|iPhone|iPod|Windows Phone|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+  // iPadOS can present a desktop-like Mac UA; this special case identifies iPads without blocking Macs.
+  const iPadLike = /Macintosh/i.test(ua) && /MacIntel/i.test(platform) && (navigator.maxTouchPoints || 0) > 1;
+  if (mobileUA || iPadLike) document.documentElement.classList.add('device-blocked');
+})();
+</script>
+
+<div id="deviceGate" aria-live="polite">
+  <div class="device-gate-card">
+    <div class="device-gate-icon">🖥️</div>
+    <h2>ClipFlex is desktop-only</h2>
+    <p>This editor is designed for laptop and PC browsers. Please open ClipFlex on a desktop computer for the full editing experience.</p>
+    <div class="device-gate-note">Touchscreen laptops are supported.</div>
+  </div>
+</div>
+
 
 <div id="app">
 
@@ -793,6 +838,19 @@
           <input type="range" id="animLengthSlider" min="0.2" max="10" step="0.1" value="3">
           <span class="insp-val" id="animLengthVal">3.0s</span>
         </span>
+      </div>
+      <div class="insp-field" id="fieldKeyframes" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+        <label>Keyframes</label>
+        <span class="insp-field" style="width:100%;">
+          <label>Property</label>
+          <select id="keyframeProperty" style="flex:1;min-width:150px;"></select>
+        </span>
+        <span class="insp-field" style="width:100%;">
+          <button class="btn primary" id="btnAddKeyframe" type="button">◆ Add / Update</button>
+          <button class="btn danger-ghost" id="btnDeleteKeyframe" type="button">Delete at Playhead</button>
+        </span>
+        <div id="keyframeList" style="width:100%;display:flex;flex-direction:column;gap:4px;"></div>
+        <div style="font-size:10.5px;color:var(--text-faint);">Move the playhead, change the selected property, then add/update a keyframe. ClipFlex interpolates between keyframes automatically.</div>
       </div>
       <div class="insp-field" id="fieldCrop" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
         <label>Crop</label>
@@ -1498,6 +1556,124 @@ function animatedRect(anim, elapsed, x, y, w, h){
   const dy = y - (dh-h)*py;
   return { dx, dy, dw, dh };
 }
+/* ===================== KEYFRAMES ===================== */
+const KF_EPS = 0.015;
+const KEYFRAME_PROPS = {
+  textPosition: 'Text Position',
+  pipBox: 'PIP Position & Size',
+  opacity: 'Opacity',
+  blur: 'Blur',
+  volume: 'Volume'
+};
+function ensureKeyframes(clip){ if (!clip.keyframes) clip.keyframes={}; return clip.keyframes; }
+function cloneKFValue(v){ return v==null?v:JSON.parse(JSON.stringify(v)); }
+function localClipTime(clip,timelineTime){ return clamp((timelineTime??state.playhead)-clip.start,0,clipDuration(clip)); }
+function kfValueAt(clip,prop,timelineTime,fallback){
+  const arr=(clip.keyframes&&clip.keyframes[prop])||[];
+  if(!arr.length) return cloneKFValue(fallback);
+  const t=localClipTime(clip,timelineTime);
+  let prev=arr[0], next=arr[arr.length-1];
+  for(const k of arr){ if(k.t<=t) prev=k; if(k.t>=t){ next=k; break; } }
+  if(Math.abs(prev.t-next.t)<1e-9) return cloneKFValue(prev.v);
+  const u=clamp((t-prev.t)/(next.t-prev.t),0,1), a=prev.v, b=next.v;
+  if(typeof a==='number'&&typeof b==='number') return a+(b-a)*u;
+  if(a&&b&&typeof a==='object'){
+    const out={};
+    for(const key of Object.keys(a)) out[key]=(typeof a[key]==='number'&&typeof b[key]==='number')?a[key]+(b[key]-a[key])*u:(u<.5?a[key]:b[key]);
+    return out;
+  }
+  return cloneKFValue(u<.5?a:b);
+}
+function getAnimatedClipValues(clip,timelineTime){
+  return {
+    opacity:kfValueAt(clip,'opacity',timelineTime,clip.opacity??100),
+    blur:kfValueAt(clip,'blur',timelineTime,clip.blur??0),
+    volume:kfValueAt(clip,'volume',timelineTime,clip.volume??100),
+    textPosition:kfValueAt(clip,'textPosition',timelineTime,clip.position||{x:.5,y:.5}),
+    pipBox:kfValueAt(clip,'pipBox',timelineTime,clip.pipBox||{x:.62,y:.62,w:.28,h:.28})
+  };
+}
+function keyframeCurrentValue(clip,prop){ const a=getAnimatedClipValues(clip,state.playhead); return cloneKFValue(a[prop]); }
+function keyframeTimesFor(clip,prop){ return ((clip.keyframes&&clip.keyframes[prop])||[]).slice().sort((a,b)=>a.t-b.t); }
+function cloneKeyframesObject(kf){
+  if(!kf) return {};
+  const out={};
+  for(const [prop,arr] of Object.entries(kf)) out[prop]=Array.isArray(arr)?arr.map(k=>({t:Number(k.t)||0,v:cloneKFValue(k.v)})) : [];
+  return out;
+}
+function transformKeyframesForSplit(originalClip, splitLocalTime, firstDuration){
+  const src=cloneKeyframesObject(originalClip.keyframes);
+  const first={}, second={};
+  for(const [prop,arr] of Object.entries(src)){
+    if(!arr.length) continue;
+    const sorted=arr.slice().sort((a,b)=>a.t-b.t);
+    const fallback = prop==='textPosition' ? (originalClip.position||{x:.5,y:.5}) : prop==='pipBox' ? (originalClip.pipBox||{x:.62,y:.62,w:.28,h:.28}) : (originalClip[prop]??0);
+    const boundary=kfValueAt(originalClip,prop,originalClip.start+splitLocalTime,fallback);
+    const firstArr=sorted.filter(k=>k.t < splitLocalTime-KF_EPS);
+    const secondArr=sorted.filter(k=>k.t > splitLocalTime+KF_EPS).map(k=>({t:k.t-splitLocalTime,v:cloneKFValue(k.v)}));
+    firstArr.push({t:Math.max(0,firstDuration),v:cloneKFValue(boundary)});
+    secondArr.unshift({t:0,v:cloneKFValue(boundary)});
+    first[prop]=firstArr.filter(k=>k.t>=0&&k.t<=firstDuration+KF_EPS).sort((a,b)=>a.t-b.t);
+    second[prop]=secondArr.filter(k=>k.t>=0&&k.t<=(clipDuration(originalClip)-splitLocalTime)+KF_EPS).sort((a,b)=>a.t-b.t);
+  }
+  return {first,second};
+}
+function pruneAndShiftKeyframesAfterTrim(clip, deltaStart, newDuration){
+  if(!clip.keyframes) return;
+  for(const [prop,arr] of Object.entries(clip.keyframes)){
+    if(!Array.isArray(arr)) continue;
+    const shifted=arr.map(k=>({t:(Number(k.t)||0)-deltaStart,v:cloneKFValue(k.v)}))
+      .filter(k=>k.t>=-KF_EPS && k.t<=newDuration+KF_EPS)
+      .map(k=>({t:clamp(Math.round(k.t*1000)/1000,0,newDuration),v:k.v}))
+      .sort((a,b)=>a.t-b.t);
+    clip.keyframes[prop]=shifted;
+    if(!shifted.length) delete clip.keyframes[prop];
+  }
+  if(!Object.keys(clip.keyframes).length) delete clip.keyframes;
+}
+function upsertKeyframe(clip,prop,t,v){
+  const k=ensureKeyframes(clip), arr=k[prop]||(k[prop]=[]), existing=arr.find(x=>Math.abs(x.t-t)<KF_EPS);
+  if(existing) existing.v=cloneKFValue(v); else arr.push({t:Math.round(t*1000)/1000,v:cloneKFValue(v)});
+  arr.sort((a,b)=>a.t-b.t);
+}
+function deleteKeyframeAt(clip,prop,t){
+  const arr=(clip.keyframes&&clip.keyframes[prop])||[], i=arr.findIndex(x=>Math.abs(x.t-t)<KF_EPS);
+  if(i<0) return false; arr.splice(i,1); if(!arr.length) delete clip.keyframes[prop]; return true;
+}
+function keyframePropsFor(clip,track){
+  const out=[];
+  if(clip.type==='text') out.push('textPosition','opacity');
+  if(track==='pip') out.push('pipBox');
+  if(clip.type==='video'||clip.type==='image') out.push('opacity','blur');
+  if(clip.type==='video'||clip.type==='audio'||track==='pip') out.push('volume');
+  return [...new Set(out)];
+}
+function renderKeyframeList(clip,prop){
+  const list=$('#keyframeList'); if(!clip||!prop){list.innerHTML='';return;}
+  const arr=keyframeTimesFor(clip,prop);
+  if(!arr.length){list.innerHTML='<div style="font-size:10.5px;color:var(--text-faint);padding:4px 0;">No keyframes yet.</div>';return;}
+  list.innerHTML=arr.map((k,i)=>`<button type="button" class="btn kf-row" data-kft="${k.t}" style="width:100%;justify-content:space-between;padding:5px 8px;"><span>◆ ${fmtTime(k.t)}</span><span style="opacity:.65;">${i+1}</span></button>`).join('');
+  list.querySelectorAll('.kf-row').forEach(btn=>btn.addEventListener('click',()=>{ const f=findClip(state.selectedClipId); if(!f)return; state.playhead=clamp(f.clip.start+parseFloat(btn.dataset.kft),0,TIMELINE_CAP); renderFrame(state.playhead); renderTimeline(); }));
+}
+function syncKeyframeUI(clip,track){
+  const sel=$('#keyframeProperty'), props=keyframePropsFor(clip,track), current=sel.value;
+  sel.innerHTML=props.map(p=>`<option value="${p}">${KEYFRAME_PROPS[p]}</option>`).join('');
+  sel.value=props.includes(current)?current:(props[0]||''); renderKeyframeList(clip,sel.value);
+}
+function addOrUpdateKeyframe(){
+  const f=findClip(state.selectedClipId), prop=$('#keyframeProperty').value; if(!f||!prop)return;
+  pushHistory(); upsertKeyframe(f.clip,prop,localClipTime(f.clip,state.playhead),keyframeCurrentValue(f.clip,prop));
+  renderInspector(); renderTimeline(); renderFrame(state.playhead); showToast('Keyframe added / updated.','success');
+}
+function deleteCurrentKeyframe(){
+  const f=findClip(state.selectedClipId), prop=$('#keyframeProperty').value; if(!f||!prop)return;
+  if(!((f.clip.keyframes&&f.clip.keyframes[prop])||[]).some(x=>Math.abs(x.t-localClipTime(f.clip,state.playhead))<KF_EPS)){showToast('No keyframe at the playhead.','error');return;}
+  pushHistory(); deleteKeyframeAt(f.clip,prop,localClipTime(f.clip,state.playhead)); renderInspector(); renderTimeline(); renderFrame(state.playhead);
+}
+$('#keyframeProperty').addEventListener('change',()=>{const f=findClip(state.selectedClipId);if(f)renderKeyframeList(f.clip,$('#keyframeProperty').value);});
+$('#btnAddKeyframe').addEventListener('click',addOrUpdateKeyframe);
+$('#btnDeleteKeyframe').addEventListener('click',deleteCurrentKeyframe);
+
 function drawContain(source, sw, sh, crop, fx){
   clearCanvas();
   if (!sw || !sh) return;
@@ -1518,18 +1694,19 @@ function drawContain(source, sw, sh, crop, fx){
   }
   try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
   ctx.restore();
-  if (fx && fx.curves) applyCurvesToRect(fx.curves, dx, dy, dw, dh);
-  if (fx && fx.hsl) applyHSLToRect(fx.hsl, dx, dy, dw, dh);
+  if (fx) applyColorFxToRect(fx.curves, fx.hsl, dx, dy, dw, dh);
 }
 function drawTextOverlay(clip){
   if (!clip) return;
-  const pos = clip.position || {x:0.5,y:0.5};
+  const kfv = getAnimatedClipValues(clip,state.playhead);
+  const pos = kfv.textPosition || clip.position || {x:0.5,y:0.5};
   const x = pos.x*canvas.width, y = pos.y*canvas.height;
   const lines = (clip.content||'').split('\n');
   const size = clip.size||48;
   ctx.save();
   ctx.font = `700 ${size}px ${clip.font||'Arial, sans-serif'}`;
   ctx.fillStyle = clip.color||'#ffffff';
+  ctx.globalAlpha = clamp((kfv.opacity ?? clip.opacity ?? 100)/100,0,1);
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.shadowColor = 'rgba(0,0,0,.6)';
@@ -1541,8 +1718,8 @@ function drawTextOverlay(clip){
   });
   ctx.restore();
 }
-function pipBoxPx(clip){
-  const r = clip.pipBox || {x:0.62,y:0.62,w:0.28,h:0.28};
+function pipBoxPx(clip,time=state.playhead){
+  const r = getAnimatedClipValues(clip,time).pipBox || clip.pipBox || {x:0.62,y:0.62,w:0.28,h:0.28};
   return { x: r.x*canvas.width, y: r.y*canvas.height, w: r.w*canvas.width, h: r.h*canvas.height };
 }
 const PIP_HANDLE_DIRS = ['n','s','e','w','nw','ne','sw','se'];
@@ -1600,6 +1777,7 @@ function drawPipOverlay(clip){
   const baseW = sWidth*scale, baseH = sHeight*scale;
   const baseX = box.x + (box.w-baseW)/2, baseY = box.y + (box.h-baseH)/2;
   const pipElapsed = state.playhead - clip.start;
+  const kfv = getAnimatedClipValues(clip,state.playhead);
   const { dx, dy, dw, dh } = clip.anim ? animatedRect(clip.anim, pipElapsed, baseX, baseY, baseW, baseH) : { dx:baseX, dy:baseY, dw:baseW, dh:baseH };
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,.5)';
@@ -1608,14 +1786,13 @@ function drawPipOverlay(clip){
   ctx.beginPath();
   ctx.rect(box.x, box.y, box.w, box.h);
   ctx.clip(); // keep any pan/zoom animation contained within the PIP box
-  ctx.globalAlpha = clamp((clip.opacity ?? 100)/100, 0, 1);
-  if (clip.blur) ctx.filter = `blur(${clip.blur}px)`;
+  ctx.globalAlpha = clamp((kfv.opacity ?? clip.opacity ?? 100)/100, 0, 1);
+  if (kfv.blur) ctx.filter = `blur(${kfv.blur}px)`;
   ctx.fillStyle = '#000';
   ctx.fillRect(box.x, box.y, box.w, box.h);
   try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
   ctx.restore();
-  if (clip.curves) applyCurvesToRect(clip.curves, dx, dy, dw, dh);
-  if (clip.hsl) applyHSLToRect(clip.hsl, dx, dy, dw, dh);
+  applyColorFxToRect(clip.curves, clip.hsl, dx, dy, dw, dh);
   ctx.shadowBlur = 0;
   ctx.strokeStyle = 'rgba(255,255,255,.6)';
   ctx.lineWidth = 2;
@@ -1750,17 +1927,17 @@ function paintFrame(frame, crop, alpha, fx, box, offsetX, offsetY, scaleMul){
   if (fx && fx.blur) ctx.filter = `blur(${fx.blur}px)`;
   try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, x, y, w, h); }catch(e){}
   ctx.restore();
-  if (fx && fx.curves) applyCurvesToRect(fx.curves, x, y, w, h);
-  if (fx && fx.hsl) applyHSLToRect(fx.hsl, x, y, w, h);
+  if (fx) applyColorFxToRect(fx.curves, fx.hsl, x, y, w, h);
 }
 // composites the blend between clip A (outgoing) and clip B (incoming) for one of the basic transition
 // effects, inside `box` (full canvas for the Video track, the PIP rect for the PIP track)
 function renderTransitionComposite(trans, time, elA, elB, box){
   const { a, b, type, progress } = trans;
-  const fa = sampleClipFrame(a, elA, time, clamp((a.volume??100)/100,0,1) * audioFadeFactor(a, time) * (1-progress));
-  const fb = sampleClipFrame(b, elB, time, clamp((b.volume??100)/100,0,1) * audioFadeFactor(b, time) * progress);
-  const fxA = { opacity:a.opacity, blur:a.blur, curves:a.curves, hsl:a.hsl };
-  const fxB = { opacity:b.opacity, blur:b.blur, curves:b.curves, hsl:b.hsl };
+  const av=getAnimatedClipValues(a,time), bv=getAnimatedClipValues(b,time);
+  const fa = sampleClipFrame(a, elA, time, clamp((av.volume??a.volume??100)/100,0,1) * audioFadeFactor(a, time) * (1-progress));
+  const fb = sampleClipFrame(b, elB, time, clamp((bv.volume??b.volume??100)/100,0,1) * audioFadeFactor(b, time) * progress);
+  const fxA = { opacity:av.opacity, blur:av.blur, curves:a.curves, hsl:a.hsl };
+  const fxB = { opacity:bv.opacity, blur:b.blur, curves:b.curves, hsl:b.hsl };
   const bw = box.w, bh = box.h;
   switch(type){
     case 'fade':
@@ -1844,16 +2021,17 @@ function renderFrame(time){
           try{ previewVideoEl.currentTime = expected; }catch(e){}
         }
         previewVideoEl.playbackRate = vClip.speed;
-        previewVideoEl.volume = clamp((vClip.volume ?? 100)/100, 0, 1) * audioFadeFactor(vClip, time);
+        const vkf=getAnimatedClipValues(vClip,time);
+        previewVideoEl.volume = clamp((vkf.volume ?? vClip.volume ?? 100)/100, 0, 1) * audioFadeFactor(vClip,time);
         if (state.isPlaying){ if (previewVideoEl.paused) previewVideoEl.play().catch(()=>{}); }
         else { if (!previewVideoEl.paused) previewVideoEl.pause(); }
-        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:vClip.opacity, blur:vClip.blur, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time - vClip.start});
+        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
       } else if (vClip.type === 'image' && media){
         if (!previewVideoEl.paused) previewVideoEl.pause();
         currentVideoClipId = vClip.id;
         let img = imgCache[media.id];
         if (!img){ img = new Image(); img.src = media.url; imgCache[media.id]=img; }
-        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:vClip.opacity, blur:vClip.blur, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time - vClip.start});
+        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
         else clearCanvas();
       }
     } else {
@@ -1866,7 +2044,7 @@ function renderFrame(time){
   // ---- PIP overlay lane (drawn on top of main video, under text) ----
   const pipTrans = findTransitionAtTime('pip', time);
   if (pipTrans){
-    const box = pipBoxPx(pipTrans.a);
+    const box = pipBoxPx(pipTrans.a,time);
     ctx.save();
     ctx.shadowColor = 'rgba(0,0,0,.5)';
     ctx.shadowBlur = 14;
@@ -1988,6 +2166,7 @@ canvas.addEventListener('mousedown', e=>{
   const onMove = ev=>{
     if (!pushed){ pushHistory(); pushed = true; }
     tClip.position = toNorm(ev);
+    if(tClip.keyframes&&tClip.keyframes.textPosition&&tClip.keyframes.textPosition.length) upsertKeyframe(tClip,'textPosition',localClipTime(tClip,state.playhead),tClip.position);
     renderFrame(state.playhead);
   };
   const onUp = ()=>{
@@ -2024,6 +2203,7 @@ function startPipMove(clip, e, rect){
     else if (Math.abs((y+orig.h)-1) < snapTy) y = 1-orig.h;
     else if (Math.abs((y+orig.h/2)-0.5) < snapTy) y = 0.5-orig.h/2;
     clip.pipBox = { x, y, w:orig.w, h:orig.h };
+    if(clip.keyframes&&clip.keyframes.pipBox&&clip.keyframes.pipBox.length) upsertKeyframe(clip,'pipBox',localClipTime(clip,state.playhead),clip.pipBox);
     renderFrame(state.playhead);
   };
   const onUp = ()=>{
@@ -2066,6 +2246,7 @@ function startPipResize(clip, mode, e, rect){
       h = nh;
     }
     clip.pipBox = { x, y, w, h };
+    if(clip.keyframes&&clip.keyframes.pipBox&&clip.keyframes.pipBox.length) upsertKeyframe(clip,'pipBox',localClipTime(clip,state.playhead),clip.pipBox);
     renderFrame(state.playhead);
   };
   const onUp = ()=>{
@@ -2212,6 +2393,11 @@ function renderLane(laneEl, trackType){
       openClipContextMenu(e.clientX, e.clientY, clip, trackType);
     });
     laneEl.appendChild(el);
+    keyframePropsFor(clip,trackType).forEach(prop=>{
+      ((clip.keyframes&&clip.keyframes[prop])||[]).forEach(k=>{
+        const mark=document.createElement('div'); mark.className='keyframe-marker'; mark.style.left=((clip.start+k.t)*state.pxPerSec)+'px'; mark.title=`Keyframe · ${KEYFRAME_PROPS[prop]} · ${fmtTime(k.t)}`; laneEl.appendChild(mark);
+      });
+    });
   });
   if (trackType==='video' || trackType==='pip'){
     state.tracks[trackType].forEach(clip=>{
@@ -2328,6 +2514,7 @@ function attachTrimHandles(el, clip, trackType){
       const startX = e.clientX;
       const origStart = clip.start, origIn = clip.inPoint, origOut = clip.outPoint, origSpeed = clip.speed;
       const origDuration = (origOut-origIn)/origSpeed;
+      const hadKeyframes = !!clip.keyframes;
       const media = mediaById(clip.mediaId);
       // video clips time-stretch/chop instead of a plain reveal-more-footage trim (see isVideoStretch below);
       // images and text have no real "source length" so their edges drag freely, same range as the Duration field
@@ -2382,6 +2569,10 @@ function attachTrimHandles(el, clip, trackType){
       const onUp = ()=>{
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        if (hadKeyframes){
+          const deltaStart = clip.start - origStart;
+          pruneAndShiftKeyframesAfterTrim(clip, deltaStart, clipDuration(clip));
+        }
         renderTimeline(); renderInspector(); renderFrame(state.playhead);
       };
       document.addEventListener('mousemove', onMove);
@@ -2450,7 +2641,7 @@ function renderInspector(){
     setInspectorPanelOpen(true);
     insp.classList.add('show');
     $('#inspTitle').textContent = `${state.selectedClipIds.size} clips selected — Delete or Ripple-delete applies to all`;
-    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldCurves','fieldHSL','fieldAnim','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
+    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldCurves','fieldHSL','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
     return;
   }
   const found = state.selectedClipId ? findClip(state.selectedClipId) : null;
@@ -2473,6 +2664,7 @@ function renderInspector(){
   const showAnim = clip.type==='video' || clip.type==='image';
   const showText = clip.type==='text';
   const showPipHint = track==='pip';
+  const showKeyframes = keyframePropsFor(clip,track).length>0;
   $('#fieldSpeed').style.display = showSpeed ? 'flex':'none';
   $('#fieldDuration').style.display = showDuration ? 'flex':'none';
   $('#fieldVolume').style.display = showVolume ? 'flex':'none';
@@ -2482,6 +2674,7 @@ function renderInspector(){
   $('#fieldCurves').style.display = showCurves ? 'flex':'none';
   $('#fieldHSL').style.display = showHSL ? 'flex':'none';
   $('#fieldAnim').style.display = showAnim ? 'flex':'none';
+  $('#fieldKeyframes').style.display = showKeyframes ? 'flex':'none';
   $('#fieldCrop').style.display = showCrop ? 'flex':'none';
   $('#fieldText').style.display = showText ? 'flex':'none';
   $('#fieldPipHint').style.display = showPipHint ? 'block':'none';
@@ -2540,6 +2733,7 @@ function renderInspector(){
     $('#animLengthVal').textContent = len.toFixed(1)+'s';
     $('#fieldAnimLength').style.display = anim.type==='none' ? 'none' : 'flex';
   }
+  if (showKeyframes) syncKeyframeUI(clip,track);
   if (showText){
     $('#textContent').value = clip.content || '';
     $('#textFont').value = clip.font || 'Arial, sans-serif';
@@ -2609,6 +2803,7 @@ $('#volumeSlider').addEventListener('input', e=>{
   const found = findClip(state.selectedClipId);
   if (!found) return;
   found.clip.volume = parseInt(e.target.value,10);
+  if(found.clip.keyframes&&found.clip.keyframes.volume&&found.clip.keyframes.volume.length) upsertKeyframe(found.clip,'volume',localClipTime(found.clip,state.playhead),found.clip.volume);
   $('#volumeVal').textContent = found.clip.volume+'%';
   renderFrame(state.playhead);
 });
@@ -2637,6 +2832,7 @@ $('#opacitySlider').addEventListener('input', e=>{
   const found = findClip(state.selectedClipId);
   if (!found) return;
   found.clip.opacity = parseInt(e.target.value,10);
+  if(found.clip.keyframes&&found.clip.keyframes.opacity&&found.clip.keyframes.opacity.length) upsertKeyframe(found.clip,'opacity',localClipTime(found.clip,state.playhead),found.clip.opacity);
   $('#opacityVal').textContent = found.clip.opacity+'%';
   renderFrame(state.playhead);
 });
@@ -2645,6 +2841,7 @@ $('#blurSlider').addEventListener('input', e=>{
   const found = findClip(state.selectedClipId);
   if (!found) return;
   found.clip.blur = parseFloat(e.target.value);
+  if(found.clip.keyframes&&found.clip.keyframes.blur&&found.clip.keyframes.blur.length) upsertKeyframe(found.clip,'blur',localClipTime(found.clip,state.playhead),found.clip.blur);
   $('#blurVal').textContent = found.clip.blur+'px';
   renderFrame(state.playhead);
 });
@@ -2725,22 +2922,6 @@ function combinedCurveLUTs(curves){
   return out;
 }
 function invalidateCurveLUT(curves){ curveLUTCache.delete(curves); }
-// Applies the clip's RGB curves as a per-pixel LUT to the rect of the canvas the clip was just drawn into.
-function applyCurvesToRect(curves, x, y, w, h){
-  if (curvesAreIdentity(curves)) return;
-  const rx = Math.max(0, Math.floor(x)), ry = Math.max(0, Math.floor(y));
-  const rw = Math.min(canvas.width - rx, Math.ceil(w));
-  const rh = Math.min(canvas.height - ry, Math.ceil(h));
-  if (rw<=0 || rh<=0) return;
-  const { r:rLUT, g:gLUT, b:bLUT } = combinedCurveLUTs(curves);
-  let imgData;
-  try{ imgData = ctx.getImageData(rx, ry, rw, rh); }catch(e){ return; }
-  const d = imgData.data;
-  for (let i=0; i<d.length; i+=4){
-    d[i] = rLUT[d[i]]; d[i+1] = gLUT[d[i+1]]; d[i+2] = bLUT[d[i+2]];
-  }
-  ctx.putImageData(imgData, rx, ry);
-}
 
 let curvesEditorClipId = null;
 let curvesChannel = 'master';
@@ -2834,9 +3015,10 @@ curvesCanvasEl.addEventListener('mousedown', e=>{
   let idx = hitTestCurvePoint(points, px, py);
   if (idx === null){
     const x = pxToCurveX(px), y = pxToCurveY(py);
-    points.push({x,y});
+    const newPoint = {x,y};
+    points.push(newPoint);
     points.sort((a,b)=>a.x-b.x);
-    idx = points.findIndex(p=>p.x===x && p.y===y);
+    idx = points.indexOf(newPoint); // identity lookup — safe even if another point shares this x/y
   }
   invalidateCurveLUT(curves);
   curveDrag = { clip, points, idx };
@@ -2944,9 +3126,12 @@ function hslToRgb(h,s,l){
   const b = hue2rgb(p,q,hk-1/3);
   return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
 }
-// Applies the clip's Hue/Saturation/Lightness wheel offsets as a per-pixel transform to the rect just drawn.
-function applyHSLToRect(hsl, x, y, w, h){
-  if (hslIsIdentity(hsl)) return;
+// Applies curves and/or HSL in a single getImageData/putImageData round trip
+// (avoids doing two full pixel readbacks on the same rect when both are active).
+function applyColorFxToRect(curves, hsl, x, y, w, h){
+  const hasCurves = curves && !curvesAreIdentity(curves);
+  const hasHSL = hsl && !hslIsIdentity(hsl);
+  if (!hasCurves && !hasHSL) return;
   const rx = Math.max(0, Math.floor(x)), ry = Math.max(0, Math.floor(y));
   const rw = Math.min(canvas.width - rx, Math.ceil(w));
   const rh = Math.min(canvas.height - ry, Math.ceil(h));
@@ -2954,9 +3139,14 @@ function applyHSLToRect(hsl, x, y, w, h){
   let imgData;
   try{ imgData = ctx.getImageData(rx, ry, rw, rh); }catch(e){ return; }
   const d = imgData.data;
+  const lut = hasCurves ? combinedCurveLUTs(curves) : null;
   for (let i=0; i<d.length; i+=4){
-    const [h0,s0,l0] = rgbToHsl(d[i], d[i+1], d[i+2]);
-    const [r,g,b] = hslToRgb(h0 + hsl.h, clamp(s0 + hsl.s, 0, 100), clamp(l0 + hsl.l, 0, 100));
+    let r=d[i], g=d[i+1], b=d[i+2];
+    if (lut){ r=lut.r[r]; g=lut.g[g]; b=lut.b[b]; }
+    if (hasHSL){
+      const [h0,s0,l0] = rgbToHsl(r, g, b);
+      [r,g,b] = hslToRgb(h0 + hsl.h, clamp(s0 + hsl.s, 0, 100), clamp(l0 + hsl.l, 0, 100));
+    }
     d[i]=r; d[i+1]=g; d[i+2]=b;
   }
   ctx.putImageData(imgData, rx, ry);
@@ -3378,12 +3568,19 @@ function splitClip(clip, track, atTime){
     return;
   }
   pushHistory();
-  const splitSourceOffset = clip.inPoint + (atTime - clip.start)*clip.speed;
+  const splitLocalTime = atTime - clip.start;
+  const splitSourceOffset = clip.inPoint + splitLocalTime*clip.speed;
+  const original = JSON.parse(JSON.stringify(clip));
   const secondClip = JSON.parse(JSON.stringify(clip));
   secondClip.id = uid();
   secondClip.start = atTime;
   secondClip.inPoint = splitSourceOffset;
   clip.outPoint = splitSourceOffset;
+  if (original.keyframes){
+    const parts=transformKeyframesForSplit(original, splitLocalTime, splitLocalTime);
+    clip.keyframes=parts.first;
+    secondClip.keyframes=parts.second;
+  }
   state.tracks[track].push(secondClip);
   renderTimeline();
   selectClip(clip.id);
@@ -3634,6 +3831,7 @@ async function saveProjectToDisk(){
     const payload = {
       clipflexProject: true, version: 2,
       canvasW: canvas.width, canvasH: canvas.height,
+      trackOrder: [...state.trackOrder],
       tracks: state.tracks, media: mediaOut, savedAt: Date.now()
     };
     const blob = new Blob([JSON.stringify(payload)], { type:'application/json' });
@@ -3691,6 +3889,10 @@ async function openProjectFromDisk(){
       text: Array.isArray(tr.text) ? tr.text : [],
       pip: Array.isArray(tr.pip) ? tr.pip : []
     };
+    if (Array.isArray(payload.trackOrder) && payload.trackOrder.length===4){
+      const validOrder = payload.trackOrder.filter(t=>['video','audio','text','pip'].includes(t));
+      if (validOrder.length===4) { state.trackOrder = validOrder; applyTrackOrder(); }
+    }
     if (payload.canvasW && payload.canvasH){
       canvas.width = payload.canvasW; canvas.height = payload.canvasH;
       canvas.style.aspectRatio = payload.canvasW+'/'+payload.canvasH;
