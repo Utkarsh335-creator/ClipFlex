@@ -3535,24 +3535,74 @@ function startMarqueeSelect(e){
 }
 
 /* ===================== RULER SCRUB ===================== */
+/* Coalesce high-frequency pointer events to one preview render per animation frame.
+   Pointer capture also prevents leaving the ruler from turning the drag into an
+   uncontrolled document-wide mousemove stream. */
 let scrubbingRuler = false;
+let scrubRAF = 0;
+let scrubPendingTime = null;
 function rulerTimeFromEvent(e){
-  const rect = rulerEl.getBoundingClientRect();
-  const scrollLeft = timelineScroll.scrollLeft;
-  return clamp((e.clientX - rect.left + scrollLeft)/state.pxPerSec, 0, TIMELINE_CAP);
+  const rulerRect = rulerEl.getBoundingClientRect();
+  const innerWidth = parseFloat(timelineInner.style.width) || 0;
+  const renderedDuration = Math.max(0, innerWidth / state.pxPerSec);
+  const maxTime = Math.min(TIMELINE_CAP, renderedDuration || totalDuration());
+  // rulerRect already contains the current horizontal scroll offset.
+  // Do NOT add timelineScroll.scrollLeft here: that would double-count it.
+  return clamp((e.clientX - rulerRect.left) / state.pxPerSec, 0, maxTime);
 }
-rulerEl.addEventListener('mousedown', e=>{
-  scrubbingRuler = true;
-  backToTimeline(); pauseTimeline();
-  state.playhead = rulerTimeFromEvent(e);
-  renderFrame(state.playhead);
-});
-document.addEventListener('mousemove', e=>{
+
+function applyRulerScrub(e){
+  const t = rulerTimeFromEvent(e);
+  state.playhead = t;
+  renderFrame(t);
+}
+
+function scheduleRulerScrub(e){
+  scrubPendingTime = rulerTimeFromEvent(e);
+  if (scrubRAF) return;
+  scrubRAF = requestAnimationFrame(()=>{
+    scrubRAF = 0;
+    if (!scrubbingRuler || scrubPendingTime == null) return;
+    state.playhead = scrubPendingTime;
+    scrubPendingTime = null;
+    renderFrame(state.playhead);
+  });
+}
+
+function stopRulerScrub(){
   if (!scrubbingRuler) return;
-  state.playhead = rulerTimeFromEvent(e);
-  renderFrame(state.playhead);
+  scrubbingRuler = false;
+  scrubPendingTime = null;
+  if (scrubRAF){ cancelAnimationFrame(scrubRAF); scrubRAF = 0; }
+}
+
+rulerEl.addEventListener('pointerdown', e=>{
+  if (e.button !== 0) return;
+  scrubbingRuler = true;
+  backToTimeline();
+  pauseTimeline();
+
+  // Update immediately on the click. This preserves the original
+  // "click anywhere -> yellow playhead jumps there" behavior.
+  applyRulerScrub(e);
+
+  try{ rulerEl.setPointerCapture(e.pointerId); }catch(_){}
+  e.preventDefault();
 });
-document.addEventListener('mouseup', ()=>{ scrubbingRuler=false; });
+
+rulerEl.addEventListener('pointermove', e=>{
+  if (!scrubbingRuler) return;
+  scheduleRulerScrub(e);
+});
+
+rulerEl.addEventListener('pointerup', e=>{
+  if (scrubbingRuler) applyRulerScrub(e);
+  stopRulerScrub();
+  try{ rulerEl.releasePointerCapture(e.pointerId); }catch(_){}
+});
+
+rulerEl.addEventListener('pointercancel', stopRulerScrub);
+window.addEventListener('blur', stopRulerScrub);
 
 /* ===================== SPLIT / DELETE / COPY / CUT / PASTE ===================== */
 function splitSelected(){
@@ -4425,26 +4475,4 @@ function moveTrack(type, dir){
 document.querySelectorAll('.track-order-btn').forEach(btn=>{
   btn.addEventListener('click', e=>{
     e.stopPropagation();
-    const row = btn.closest('.track-row');
-    if (!row) return;
-    moveTrack(row.dataset.trackType, parseInt(btn.dataset.dir,10));
-  });
-});
-
-/* ===================== INIT ===================== */
-async function init(){
-  clearCanvas();
-  loadTrackOrderFromStorage();
-  applyTrackOrder();
-  renderTimeline();
-  renderInspector();
-  updateHistoryButtons();
-  startAutosave();
-  await offerAutosaveRecovery();
-}
-init();
-
-})();
-</script>
-</body>
-</html>
+    const row = btn.closest('.track-
