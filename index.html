@@ -385,6 +385,48 @@
     border-radius:999px;padding:6px;box-shadow:var(--shadow-2);pointer-events:auto;
   }
 
+  /* ---- crop-mode UX / interaction lock ---- */
+  .crop-interaction-lock{
+    position:fixed;inset:0;display:none;z-index:90;
+    background:transparent;pointer-events:auto;
+  }
+  body.crop-mode .crop-interaction-lock{display:block;}
+  body.crop-mode .crop-overlay{z-index:100;}
+  body.crop-mode #inspectorPanel{
+    position:relative;z-index:110;
+  }
+  body.crop-mode #inspectorPanel .panel-head,
+  body.crop-mode #inspectorPanel .insp-title,
+  body.crop-mode #inspectorPanel #inspector > .insp-field:not(#fieldCrop){
+    pointer-events:none;opacity:.45;
+  }
+  body.crop-mode #fieldCrop{
+    position:relative;z-index:120;
+  }
+  /* Crop actions stay intentionally bright against the darkened preview. */
+  body.crop-mode #cropActiveControls .btn{
+    background:#f4f7fb;
+    color:#17202a;
+    border-color:#d5dce5;
+    box-shadow:0 1px 2px rgba(0,0,0,.22);
+    opacity:1;
+  }
+  body.crop-mode #cropActiveControls .btn:hover{
+    background:#ffffff;
+    color:#111820;
+    border-color:#b9c5d3;
+  }
+  body.crop-mode #cropActiveControls .btn.primary{
+    background:#eaf7ff;
+    color:#075985;
+    border-color:#8bd1ff;
+  }
+  body.crop-mode #cropActiveControls .btn.danger-ghost{
+    background:#fff1f1;
+    color:#9f1d1d;
+    border-color:#f0a4a4;
+  }
+
   /* ============ TIMELINE (BOTTOM) ============ */
   #timeline{
     grid-area:timeline;
@@ -1040,6 +1082,8 @@
     </div>
   </div>
 </div>
+
+<div class="crop-interaction-lock" id="cropInteractionLock" aria-hidden="true"></div>
 
 <!-- toasts -->
 <div id="toasts"></div>
@@ -3268,6 +3312,7 @@ $('#btnHSLReset').addEventListener('click', ()=>{
 /* ---- interactive crop tool (drag a box directly on the preview, like a photo editor) ---- */
 let cropState = null; // {clip, natW, natH, rect:{x,y,w,h} normalized to full source, content:{x,y,w,h} in overlay px}
 const cropOverlayEl = $('#cropOverlay');
+const cropInteractionLockEl = $('#cropInteractionLock');
 const HANDLE_DIRS = ['n','s','e','w','nw','ne','sw','se'];
 
 function getClipNaturalSize(clip, media, track){
@@ -3373,14 +3418,28 @@ function enterCropMode(){
   if (source) drawContain(source, nat.w, nat.h, null);
   cropState = { clip, track, natW: nat.w, natH: nat.h, rect: { ...(clip.crop || {x:0,y:0,w:1,h:1}) } };
   buildCropDOM();
-  positionCropOverlayToCanvas();
-  renderCropBox();
+
+  // Activate first so the overlay has measurable dimensions, then position it.
+  // A second layout pass prevents the transient tiny blue box in the top-left
+  // when the preview canvas has just changed size.
   cropOverlayEl.classList.add('active');
+  document.body.classList.add('crop-mode');
+  cropInteractionLockEl.style.display='block';
   $('#cropIdleControls').style.display='none';
   $('#cropActiveControls').style.display='flex';
+
+  positionCropOverlayToCanvas();
+  renderCropBox();
+  requestAnimationFrame(()=>{
+    if (!cropState) return;
+    positionCropOverlayToCanvas();
+    renderCropBox();
+  });
 }
 function exitCropMode(){
   cropState = null;
+  document.body.classList.remove('crop-mode');
+  cropInteractionLockEl.style.display='none';
   cropOverlayEl.classList.remove('active');
   cropOverlayEl.innerHTML = '';
   $('#cropIdleControls').style.display='block';
