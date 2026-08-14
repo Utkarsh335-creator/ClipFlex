@@ -925,6 +925,35 @@
         <button class="btn" id="btnCenterText" type="button">Center</button>
         <div style="font-size:10.5px;color:var(--text-faint);">Tip: drag the text directly on the preview to reposition it.</div>
       </div>
+      <div class="insp-field" id="fieldChroma" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+        <span class="insp-field" style="width:100%;">
+          <label style="flex:1;">Chroma Key</label>
+          <input type="checkbox" id="chromaEnabled" style="width:16px;height:16px;cursor:pointer;">
+        </span>
+        <div id="chromaControls" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+          <span class="insp-field" style="width:100%;">
+            <label>Key Color</label>
+            <input type="color" id="chromaColor" value="#00ff00" style="width:34px;height:28px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;">
+            <button class="btn" id="btnChromaPick" type="button">🎯 Pick from preview</button>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label>Tolerance</label>
+            <input type="range" id="chromaTolerance" min="0" max="100" value="35">
+            <span class="insp-val" id="chromaToleranceVal">35</span>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label>Softness</label>
+            <input type="range" id="chromaSoftness" min="0" max="100" value="20">
+            <span class="insp-val" id="chromaSoftnessVal">20</span>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label>Spill Suppress</label>
+            <input type="range" id="chromaSpill" min="0" max="100" value="0">
+            <span class="insp-val" id="chromaSpillVal">0</span>
+          </span>
+          <div style="font-size:10.5px;color:var(--text-faint);">Removes the key color so the layer below shows through — great for green/blue screen PIP clips.</div>
+        </div>
+      </div>
       <div id="fieldPipHint" style="display:none;font-size:10.5px;color:var(--text-faint);">Drag the PIP box on the preview to move it — drag its bottom-right corner to resize.</div>
     </div>
   </div>
@@ -1221,6 +1250,18 @@ function snapStart(rawStart, duration, excludeId){
     if (dEnd <= bestDist){ bestDist = dEnd; best = t - duration; }
   });
   return best !== null ? Math.max(0, Math.round(best*1000)/1000) : rawStart;
+}
+// snaps a single point in time (one clip edge being trimmed) to the nearest nearby clip edge/playhead/0,
+// independent of any duration — used while dragging a trim handle, so a single edge can click into place.
+function snapEdgeTime(rawTime, excludeId){
+  const targets = collectSnapTargets(excludeId);
+  const thresholdSec = SNAP_PX/state.pxPerSec;
+  let best=null, bestDist=thresholdSec;
+  targets.forEach(t=>{
+    const d = Math.abs(rawTime - t);
+    if (d <= bestDist){ bestDist = d; best = t; }
+  });
+  return best !== null ? best : rawTime;
 }
 
 /* ---- find an empty gap between clips on a track at a given time (for right-click "delete gap") ---- */
@@ -1832,9 +1873,14 @@ function drawPipOverlay(clip){
   ctx.clip(); // keep any pan/zoom animation contained within the PIP box
   ctx.globalAlpha = clamp((kfv.opacity ?? clip.opacity ?? 100)/100, 0, 1);
   if (kfv.blur) ctx.filter = `blur(${kfv.blur}px)`;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(box.x, box.y, box.w, box.h);
-  try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
+  if (chromaIsActive(clip.chroma)){
+    const keyed = chromaKeyedCanvas(source, sx, sy, sWidth, sHeight, dw, dh, clip.chroma);
+    try{ if (keyed) ctx.drawImage(keyed, dx, dy, dw, dh); }catch(e){}
+  } else {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+    try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
+  }
   ctx.restore();
   applyColorFxToRect(clip.curves, clip.hsl, dx, dy, dw, dh);
   ctx.shadowBlur = 0;
@@ -2165,6 +2211,7 @@ function updateTransportUI(time){
 
 canvas.addEventListener('mousemove', e=>{
   if (state.previewMode !== 'timeline' || state.exporting) return;
+  if (chromaPickArmed){ canvas.style.cursor = 'crosshair'; return; }
   const pClip = activeClipAt('pip', state.playhead);
   if (!pClip){ canvas.style.cursor = ''; return; }
   const rect = canvas.getBoundingClientRect();
@@ -2179,6 +2226,7 @@ canvas.addEventListener('mousemove', e=>{
 /* ---- drag the active PIP box (all edges/corners resize it, Canva-style) or text layer ---- */
 canvas.addEventListener('mousedown', e=>{
   if (state.previewMode !== 'timeline' || state.exporting) return;
+  if (chromaPickArmed) return; // let the chroma-key eyedropper handler take this click instead
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const toCanvasPx = ev => ({ x:(ev.clientX-rect.left)*scaleX, y:(ev.clientY-rect.top)*scaleY });
@@ -2568,15 +2616,22 @@ function attachTrimHandles(el, clip, trackType){
       const onMove = ev=>{
         if (!pushed){ pushHistory(); pushed = true; }
         const dxSec = (ev.clientX-startX)/state.pxPerSec;
+        let guideTime = null;
 
         if (isVideoStretch){
           const origEnd = origStart+origDuration;
           let newStart = origStart, newDuration = origDuration;
           if (side==='left'){
-            newStart = clamp(origStart+dxSec, Math.max(0,prevEnd), origEnd-minDur);
+            const rawStart = origStart+dxSec;
+            const snappedStart = snapEdgeTime(rawStart, clip.id);
+            if (Math.abs(snappedStart-rawStart) > 1e-6) guideTime = snappedStart;
+            newStart = clamp(snappedStart, Math.max(0,prevEnd), origEnd-minDur);
             newDuration = origEnd-newStart;
           } else {
-            const newEnd = clamp(origStart+origDuration+dxSec, origStart+minDur, nextStart);
+            const rawEnd = origStart+origDuration+dxSec;
+            const snappedEnd = snapEdgeTime(rawEnd, clip.id);
+            if (Math.abs(snappedEnd-rawEnd) > 1e-6) guideTime = snappedEnd;
+            const newEnd = clamp(snappedEnd, origStart+minDur, nextStart);
             newDuration = newEnd-origStart;
           }
           if (newDuration > origDuration + 1e-6){
@@ -2596,23 +2651,32 @@ function attachTrimHandles(el, clip, trackType){
           }
           clip.start = Math.round(newStart*1000)/1000;
         } else if (side==='left'){
-          let newStart = clamp(origStart+dxSec, Math.max(0,prevEnd), origStart+clipDuration(clip)-minDur);
+          const rawStart = origStart+dxSec;
+          const snappedStart = snapEdgeTime(rawStart, clip.id);
+          if (Math.abs(snappedStart-rawStart) > 1e-6) guideTime = snappedStart;
+          let newStart = clamp(snappedStart, Math.max(0,prevEnd), origStart+clipDuration(clip)-minDur);
           let newIn = origIn + (newStart-origStart)*origSpeed;
-          if (newIn < 0){ newIn = 0; newStart = origStart + (newIn-origIn)/origSpeed; }
+          const hasRealSource = clip.type!=='image' && clip.type!=='text'; // images/text have no source file to run out of, so let their left edge drag freely too
+          if (hasRealSource && newIn < 0){ newIn = 0; newStart = origStart + (newIn-origIn)/origSpeed; }
           clip.start = Math.round(newStart*1000)/1000;
           clip.inPoint = Math.round(newIn*1000)/1000;
         } else {
-          let newEnd = clamp(origStart+(origOut-origIn)/origSpeed+dxSec, origStart+minDur, nextStart);
+          const rawEnd = origStart+(origOut-origIn)/origSpeed+dxSec;
+          const snappedEnd = snapEdgeTime(rawEnd, clip.id);
+          if (Math.abs(snappedEnd-rawEnd) > 1e-6) guideTime = snappedEnd;
+          let newEnd = clamp(snappedEnd, origStart+minDur, nextStart);
           let newOut = origIn + (newEnd-origStart)*origSpeed;
           if (newOut > maxSource){ newOut = maxSource; newEnd = origStart + (newOut-origIn)/origSpeed; }
           clip.outPoint = Math.round(newOut*1000)/1000;
         }
+        showSnapGuide(guideTime);
         el.style.left = (clip.start*state.pxPerSec)+'px';
         el.style.width = Math.max(10, clipDuration(clip)*state.pxPerSec)+'px';
       };
       const onUp = ()=>{
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        hideSnapGuide();
         if (hadKeyframes){
           const deltaStart = clip.start - origStart;
           pruneAndShiftKeyframesAfterTrim(clip, deltaStart, clipDuration(clip));
@@ -2685,7 +2749,7 @@ function renderInspector(){
     setInspectorPanelOpen(true);
     insp.classList.add('show');
     $('#inspTitle').textContent = `${state.selectedClipIds.size} clips selected — Delete or Ripple-delete applies to all`;
-    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldCurves','fieldHSL','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
+    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldCurves','fieldHSL','fieldChroma','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
     return;
   }
   const found = state.selectedClipId ? findClip(state.selectedClipId) : null;
@@ -2708,6 +2772,7 @@ function renderInspector(){
   const showAnim = clip.type==='video' || clip.type==='image';
   const showText = clip.type==='text';
   const showPipHint = track==='pip';
+  const showChroma = track==='pip' && (clip.type==='video' || clip.type==='image');
   const showKeyframes = keyframePropsFor(clip,track).length>0;
   $('#fieldSpeed').style.display = showSpeed ? 'flex':'none';
   $('#fieldDuration').style.display = showDuration ? 'flex':'none';
@@ -2722,6 +2787,7 @@ function renderInspector(){
   $('#fieldCrop').style.display = showCrop ? 'flex':'none';
   $('#fieldText').style.display = showText ? 'flex':'none';
   $('#fieldPipHint').style.display = showPipHint ? 'block':'none';
+  $('#fieldChroma').style.display = showChroma ? 'flex':'none';
 
   if (showSpeed){
     const presets = ['0.25','0.5','0.75','1','1.25','1.5','2','4'];
@@ -2766,6 +2832,18 @@ function renderInspector(){
   }
   if (showHSL){
     drawAllHSLWheels(clip);
+  }
+  if (showChroma){
+    const chroma = clip.chroma || defaultChroma();
+    $('#chromaEnabled').checked = !!chroma.enabled;
+    $('#chromaControls').style.display = chroma.enabled ? 'flex' : 'none';
+    $('#chromaColor').value = chroma.color;
+    $('#chromaTolerance').value = chroma.tolerance;
+    $('#chromaToleranceVal').textContent = chroma.tolerance;
+    $('#chromaSoftness').value = chroma.softness;
+    $('#chromaSoftnessVal').textContent = chroma.softness;
+    $('#chromaSpill').value = chroma.spill;
+    $('#chromaSpillVal').textContent = chroma.spill;
   }
   if (showAnim){
     const anim = clip.anim || { type:'none', length: Math.min(3, clipDuration(clip)) };
@@ -2890,6 +2968,68 @@ $('#blurSlider').addEventListener('input', e=>{
   renderFrame(state.playhead);
 });
 $('#blurSlider').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+
+/* ---- chroma key controls ---- */
+$('#chromaEnabled').addEventListener('change', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  ensureChroma(found.clip).enabled = e.target.checked;
+  $('#chromaControls').style.display = e.target.checked ? 'flex' : 'none';
+  renderFrame(state.playhead); renderTimeline();
+});
+$('#chromaColor').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureChroma(found.clip).color = e.target.value;
+  renderFrame(state.playhead);
+});
+$('#chromaColor').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#chromaTolerance').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureChroma(found.clip).tolerance = parseInt(e.target.value,10);
+  $('#chromaToleranceVal').textContent = e.target.value;
+  renderFrame(state.playhead);
+});
+$('#chromaTolerance').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#chromaSoftness').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureChroma(found.clip).softness = parseInt(e.target.value,10);
+  $('#chromaSoftnessVal').textContent = e.target.value;
+  renderFrame(state.playhead);
+});
+$('#chromaSoftness').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#chromaSpill').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureChroma(found.clip).spill = parseInt(e.target.value,10);
+  $('#chromaSpillVal').textContent = e.target.value;
+  renderFrame(state.playhead);
+});
+$('#chromaSpill').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+
+let chromaPickArmed = false;
+$('#btnChromaPick').addEventListener('click', ()=>{
+  chromaPickArmed = true;
+  canvas.style.cursor = 'crosshair';
+  showToast('Click a spot on the preview to sample the key color.', 'info');
+});
+canvas.addEventListener('mousedown', e=>{
+  if (!chromaPickArmed) return;
+  e.preventDefault(); e.stopPropagation();
+  chromaPickArmed = false;
+  canvas.style.cursor = '';
+  const found = findClip(state.selectedClipId);
+  if (found){
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
+    const px = Math.round((e.clientX-rect.left)*scaleX), py = Math.round((e.clientY-rect.top)*scaleY);
+    try{
+      const d = ctx.getImageData(clamp(px,0,canvas.width-1), clamp(py,0,canvas.height-1), 1, 1).data;
+      const hex = '#' + [d[0],d[1],d[2]].map(v=>v.toString(16).padStart(2,'0')).join('');
+      pushHistory();
+      ensureChroma(found.clip).color = hex;
+      renderInspector(); renderFrame(state.playhead); renderTimeline();
+    }catch(err){}
+  }
+}, true);
 
 /* ---- basic clip animations (zoom / pan) ---- */
 function ensureAnim(clip){
@@ -3133,6 +3273,58 @@ function hslIsIdentity(hsl){ return !hsl || (hsl.h===0 && hsl.s===0 && hsl.l===0
 function ensureHSL(clip){
   if (!clip.hsl) clip.hsl = defaultHSL();
   return clip.hsl;
+}
+
+/* ---- chroma key (green/blue screen removal for PIP clips) ---- */
+function defaultChroma(){ return { enabled:false, color:'#00ff00', tolerance:35, softness:20, spill:0 }; }
+function ensureChroma(clip){
+  if (!clip.chroma) clip.chroma = defaultChroma();
+  return clip.chroma;
+}
+function chromaIsActive(chroma){ return !!(chroma && chroma.enabled); }
+function hexToRgb(hex){
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex||'');
+  return m ? [parseInt(m[1],16), parseInt(m[2],16), parseInt(m[3],16)] : [0,255,0];
+}
+/* Draws `source` into an offscreen canvas at the destination size, keys out pixels close to
+   chroma.color (alpha -> 0), optionally desaturates near-key "spill" on the remaining edges,
+   then draws the result onto the main canvas. Keying has to happen before compositing (unlike
+   applyColorFxToRect, which just retints pixels already baked into the main canvas) because it
+   needs to punch real transparency so whatever is underneath the PIP box shows through. */
+let chromaScratchCanvas = null;
+function chromaKeyedCanvas(source, sx, sy, sWidth, sHeight, dw, dh, chroma){
+  const w = Math.max(1, Math.round(dw)), h = Math.max(1, Math.round(dh));
+  if (!chromaScratchCanvas) chromaScratchCanvas = document.createElement('canvas');
+  const scratch = chromaScratchCanvas;
+  if (scratch.width !== w) scratch.width = w;
+  if (scratch.height !== h) scratch.height = h;
+  const sctx = scratch.getContext('2d');
+  sctx.clearRect(0,0,w,h);
+  try{ sctx.drawImage(source, sx, sy, sWidth, sHeight, 0, 0, w, h); }catch(e){ return null; }
+  const imgData = sctx.getImageData(0,0,w,h);
+  const d = imgData.data;
+  const [kr,kg,kb] = hexToRgb(chroma.color);
+  const tol = (clamp(chroma.tolerance,0,100)/100) * 300;   // low threshold: fully transparent below this
+  const soft = Math.max(1, (clamp(chroma.softness,0,100)/100) * 200); // feather range above the threshold
+  const spillAmt = clamp(chroma.spill,0,100)/100;
+  for (let i=0; i<d.length; i+=4){
+    const r=d[i], g=d[i+1], b=d[i+2];
+    const dist = Math.sqrt((r-kr)*(r-kr) + (g-kg)*(g-kg) + (b-kb)*(b-kb));
+    let alpha;
+    if (dist <= tol) alpha = 0;
+    else if (dist >= tol+soft) alpha = 1;
+    else alpha = (dist-tol)/soft;
+    d[i+3] = Math.round(d[i+3] * alpha);
+    if (spillAmt>0 && alpha>0 && alpha<1){
+      // pull the partially-keyed edge pixels toward gray to cut the green/blue tint bleeding in from the key color
+      const avg = (r+g+b)/3;
+      d[i]   = r + (avg-r)*spillAmt*(1-alpha);
+      d[i+1] = g + (avg-g)*spillAmt*(1-alpha);
+      d[i+2] = b + (avg-b)*spillAmt*(1-alpha);
+    }
+  }
+  sctx.putImageData(imgData, 0, 0);
+  return scratch;
 }
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function rgbToHsl(r,g,b){
@@ -3843,6 +4035,7 @@ document.addEventListener('scroll', hideContextMenu, true);
 
 function openClipContextMenu(x,y,clip,trackType){
   const multi = state.selectedClipIds.size > 1;
+  const showMatchToVideo = !multi && trackType==='pip';
   ctxMenuEl.innerHTML = multi ? `
     <button data-act="delete">🗑️ Delete ${state.selectedClipIds.size} clips</button>
     <button data-act="ripple">🧹 Ripple delete ${state.selectedClipIds.size} clips</button>
@@ -3850,6 +4043,7 @@ function openClipContextMenu(x,y,clip,trackType){
     <button data-act="split">✂️ Split at playhead</button>
     <button data-act="copy">📋 Copy</button>
     <button data-act="cut">✂️ Cut</button>
+    ${showMatchToVideo ? `<hr><button data-act="matchvideo">🎯 Match to main video</button>` : ''}
     <hr>
     <button data-act="delete">🗑️ Delete</button>
     <button data-act="ripple">🧹 Ripple delete</button>
@@ -3859,8 +4053,44 @@ function openClipContextMenu(x,y,clip,trackType){
   if (!multi) ctxMenuEl.querySelector('[data-act="split"]').addEventListener('click', ()=>{ splitClip(clip, trackType, state.playhead); hideContextMenu(); });
   if (!multi) ctxMenuEl.querySelector('[data-act="copy"]').addEventListener('click', ()=>{ copyClip(clip.id); hideContextMenu(); });
   if (!multi) ctxMenuEl.querySelector('[data-act="cut"]').addEventListener('click', ()=>{ cutClip(clip.id); hideContextMenu(); });
+  if (showMatchToVideo) ctxMenuEl.querySelector('[data-act="matchvideo"]').addEventListener('click', ()=>{ matchPipClipToMainVideo(clip); hideContextMenu(); });
   ctxMenuEl.querySelector('[data-act="delete"]').addEventListener('click', ()=>{ deleteClips(selection); hideContextMenu(); });
   ctxMenuEl.querySelector('[data-act="ripple"]').addEventListener('click', ()=>{ rippleDeleteClips(selection); hideContextMenu(); });
+}
+/* ---- stretch/reposition a PIP clip to exactly cover the main video track's span, so the user
+   doesn't have to hand-drag a PIP clip across a long timeline to line it up ---- */
+function matchPipClipToMainVideo(clip){
+  const vids = state.tracks.video;
+  if (!vids.length){ showToast('No clip on the main video track to match.', 'error'); return; }
+  const videoStart = Math.min(...vids.map(c=>c.start));
+  const videoEnd = Math.max(...vids.map(c=>c.start+clipDuration(c)));
+  const targetDuration = videoEnd - videoStart;
+  if (targetDuration <= 0.05) return;
+  pushHistory();
+  const origIn = clip.inPoint, origOut = clip.outPoint, origSpeed = clip.speed;
+  const media = mediaById(clip.mediaId);
+  const maxSource = clip.type==='image' ? TIMELINE_CAP : (media ? media.duration : TIMELINE_CAP);
+  if (clip.type==='video'){
+    const MIN_SPEED=0.1, MAX_SPEED=8;
+    const origDuration = (origOut-origIn)/origSpeed;
+    if (targetDuration > origDuration + 1e-6){
+      const maxDur = (origOut-origIn)/MIN_SPEED;
+      const newDuration = Math.min(targetDuration, maxDur);
+      clip.speed = Math.round(clamp((origOut-origIn)/newDuration, MIN_SPEED, MAX_SPEED)*100)/100;
+      clip.inPoint = origIn; clip.outPoint = origOut;
+      if (newDuration < targetDuration - 1e-6) showToast('Matched as closely as possible — this clip can only be slowed down so much.', 'success');
+    } else {
+      clip.speed = 1;
+      clip.inPoint = origIn;
+      clip.outPoint = Math.min(maxSource, Math.round((origIn+targetDuration)*1000)/1000);
+    }
+  } else {
+    clip.inPoint = origIn;
+    clip.outPoint = Math.round((origIn + targetDuration*origSpeed)*1000)/1000;
+  }
+  clip.start = Math.round(videoStart*1000)/1000;
+  renderTimeline(); renderInspector(); renderFrame(state.playhead);
+  showToast('PIP clip matched to main video.', 'success');
 }
 function openEmptyContextMenu(x,y,trackType,time,gap){
   const canPaste = state.clipboard && state.clipboard.trackType===trackType;
@@ -4150,6 +4380,142 @@ $('#guideClose').addEventListener('click', ()=> guideOverlay.classList.remove('s
 guideOverlay.addEventListener('click', e=>{ if (e.target===guideOverlay) guideOverlay.classList.remove('show'); });
 document.addEventListener('keydown', e=>{ if (e.key==='Escape' && guideOverlay.classList.contains('show')) guideOverlay.classList.remove('show'); });
 
+/* ===================== WEBM DURATION FIX =====================
+   Why the exported video's seek bar is locked:
+   MediaRecorder writes WebM without ever going back to fill in a real
+   Duration value in the file header (it isn't known until recording
+   stops, and the data is streamed out as it's produced). Every player
+   treats a WebM/Matroska file with no valid Duration as non-seekable,
+   which is exactly the "can't drag the blue line" behavior. This does
+   a minimal, surgical EBML patch after recording completes: it walks
+   into Segment > Info and writes (or fixes) the Duration element using
+   the actual elapsed recording time, so the exported file is properly
+   seekable in any player. Only the few elements we need to touch are
+   parsed; everything else (including all the actual video/audio frame
+   data in Clusters) is copied through untouched as raw bytes. */
+function fixWebmDuration(blob, durationMs){
+  return new Promise(resolve=>{
+    try{
+      const reader = new FileReader();
+      reader.onloadend = ()=>{
+        try{
+          const file = new WebmWriterFile(new Uint8Array(reader.result));
+          resolve(file.fixDuration(durationMs) ? file.toBlob(blob.type) : blob);
+        }catch(e){ console.warn('ClipFlex webm duration fix failed, exporting unpatched file:', e); resolve(blob); }
+      };
+      reader.onerror = ()=> resolve(blob);
+      reader.readAsArrayBuffer(blob);
+    }catch(e){ resolve(blob); }
+  });
+}
+// Minimal EBML container reader/writer — only the element types needed to
+// locate and correct Segment > Info > Duration (and TimecodeScale).
+const WEBM_SECTIONS = {
+  0x8538067: { name:'Segment', type:'Container' },
+  0x549a966: { name:'Info', type:'Container' },
+  0xad7b1:   { name:'TimecodeScale', type:'Uint' },
+  0x489:     { name:'Duration', type:'Float' }
+};
+function WebmBase(name,type){ this.name=name||'Unknown'; this.type=type||'Unknown'; }
+WebmBase.prototype.updateBySource=function(){};
+WebmBase.prototype.setSource=function(source){ this.source=source; this.updateBySource(); };
+WebmBase.prototype.updateByData=function(){};
+WebmBase.prototype.setData=function(data){ this.data=data; this.updateByData(); };
+function WebmUint(name,type){ WebmBase.call(this,name,type||'Uint'); }
+WebmUint.prototype=Object.create(WebmBase.prototype); WebmUint.prototype.constructor=WebmUint;
+function padHex(hex){ return hex.length%2===1?'0'+hex:hex; }
+WebmUint.prototype.updateBySource=function(){ this.data=''; for(let i=0;i<this.source.length;i++) this.data+=padHex(this.source[i].toString(16)); };
+WebmUint.prototype.updateByData=function(){ const length=this.data.length/2; this.source=new Uint8Array(length); for(let i=0;i<length;i++) this.source[i]=parseInt(this.data.substr(i*2,2),16); };
+WebmUint.prototype.getValue=function(){ return parseInt(this.data,16); };
+WebmUint.prototype.setValue=function(value){ this.setData(padHex(Math.round(value).toString(16))); };
+function WebmFloat(name,type){ WebmBase.call(this,name,type||'Float'); }
+WebmFloat.prototype=Object.create(WebmBase.prototype); WebmFloat.prototype.constructor=WebmFloat;
+WebmFloat.prototype.getFloatArrayType=function(){ return this.source && this.source.length===4 ? Float32Array : Float64Array; };
+WebmFloat.prototype.updateBySource=function(){ const byteArray=this.source.slice().reverse(); const FA=this.getFloatArrayType(); this.data=new FA(byteArray.buffer)[0]; };
+WebmFloat.prototype.updateByData=function(){ const FA=this.getFloatArrayType(); const floatArray=new FA([this.data]); this.source=new Uint8Array(floatArray.buffer).reverse(); };
+WebmFloat.prototype.getValue=function(){ return this.data; };
+WebmFloat.prototype.setValue=function(value){ this.setData(value); };
+function WebmContainer(name,type){ WebmBase.call(this,name,type||'Container'); }
+WebmContainer.prototype=Object.create(WebmBase.prototype); WebmContainer.prototype.constructor=WebmContainer;
+WebmContainer.prototype.readByte=function(){ return this.source[this.offset++]; };
+WebmContainer.prototype.readUint=function(){
+  const firstByte=this.readByte();
+  const bytes=8-firstByte.toString(2).length;
+  let value=firstByte-(1<<(7-bytes));
+  for(let i=0;i<bytes;i++){ value*=256; value+=this.readByte(); }
+  return value;
+};
+WebmContainer.prototype.updateBySource=function(){
+  this.data=[];
+  for(this.offset=0; this.offset<this.source.length; ){
+    const id=this.readUint();
+    const len=this.readUint();
+    const end=Math.min(this.offset+len, this.source.length);
+    const data=this.source.slice(this.offset,end);
+    const info=WEBM_SECTIONS[id]||{name:'Unknown',type:'Unknown'};
+    let Ctor=WebmBase;
+    if(info.type==='Container')Ctor=WebmContainer; else if(info.type==='Uint')Ctor=WebmUint; else if(info.type==='Float')Ctor=WebmFloat;
+    const section=new Ctor(info.name,info.type);
+    section.setSource(data);
+    this.data.push({ id, data:section });
+    this.offset=end;
+  }
+};
+WebmContainer.prototype.writeUint=function(x,draft){
+  let bytes=1, flag=0x80;
+  for(; x>=flag && bytes<8; bytes++, flag*=0x80){}
+  if(!draft){
+    let value=flag+x;
+    for(let i=bytes-1;i>=0;i--){ const c=value%256; this.source[this.offset+i]=c; value=(value-c)/256; }
+  }
+  this.offset+=bytes;
+};
+WebmContainer.prototype.writeSections=function(draft){
+  this.offset=0;
+  for(let i=0;i<this.data.length;i++){
+    const section=this.data[i], content=section.data.source, contentLength=content.length;
+    this.writeUint(section.id,draft);
+    this.writeUint(contentLength,draft);
+    if(!draft) this.source.set(content,this.offset);
+    this.offset+=contentLength;
+  }
+  return this.offset;
+};
+WebmContainer.prototype.updateByData=function(){
+  const length=this.writeSections('draft');
+  this.source=new Uint8Array(length);
+  this.writeSections();
+};
+WebmContainer.prototype.getSectionById=function(id){
+  for(let i=0;i<this.data.length;i++) if(this.data[i].id===id) return this.data[i].data;
+  return null;
+};
+function WebmWriterFile(source){ WebmContainer.call(this,'File','File'); this.setSource(source); }
+WebmWriterFile.prototype=Object.create(WebmContainer.prototype); WebmWriterFile.prototype.constructor=WebmWriterFile;
+WebmWriterFile.prototype.fixDuration=function(durationMs){
+  const segment=this.getSectionById(0x8538067);
+  if(!segment) return false;
+  const info=segment.getSectionById(0x549a966);
+  if(!info) return false;
+  const timeScaleSection=info.getSectionById(0xad7b1);
+  if(!timeScaleSection) return false;
+  let durationSection=info.getSectionById(0x489);
+  if(durationSection){
+    if(!(durationSection.getValue()>0)) durationSection.setValue(durationMs);
+    else return false; // already has a valid duration, nothing to fix
+  } else {
+    durationSection=new WebmFloat('Duration','Float');
+    durationSection.setValue(durationMs);
+    info.data.push({ id:0x489, data:durationSection });
+  }
+  timeScaleSection.setValue(1000000); // 1 tick = 1ms, so Duration is directly in ms
+  info.updateByData();
+  segment.updateByData();
+  this.updateByData();
+  return true;
+};
+WebmWriterFile.prototype.toBlob=function(mimeType){ return new Blob([this.source.buffer], { type: mimeType||'video/webm' }); };
+
 /* ===================== EXPORT ===================== */
 const modalOverlay = $('#modalOverlay');
 $('#btnExport').addEventListener('click', ()=>{
@@ -4160,7 +4526,7 @@ $('#btnExport').addEventListener('click', ()=>{
 });
 $('#btnExportCancel').addEventListener('click', ()=> modalOverlay.classList.remove('show'));
 
-let exportRecorder = null, exportWritable = null, exportChunks = [], exportUsesFallback = false, exportStream = null;
+let exportRecorder = null, exportWritable = null, exportChunks = [], exportUsesFallback = false, exportStream = null, exportStartTime = 0;
 
 $('#btnExportStart').addEventListener('click', startExport);
 async function startExport(){
@@ -4229,22 +4595,27 @@ async function startExport(){
 
   exportChunks = [];
   exportRecorder = new MediaRecorder(exportStream, { mimeType: mime });
-  exportRecorder.ondataavailable = async e=>{
+  // Buffer chunks in memory (for both save paths) instead of streaming them
+  // straight to disk — we need the complete file in hand so we can patch its
+  // Duration header below, or the exported video's seek bar won't work.
+  exportRecorder.ondataavailable = e=>{
     if (!e.data || !e.data.size) return;
-    if (exportUsesFallback){ exportChunks.push(e.data); }
-    else { try{ await exportWritable.write(e.data); }catch(err){ console.error(err); } }
+    exportChunks.push(e.data);
   };
   exportRecorder.onstop = async ()=>{
     try{
+      const rawBlob = new Blob(exportChunks, { type: mime });
+      const elapsedMs = Math.max(1, Date.now() - exportStartTime);
+      const fixedBlob = await fixWebmDuration(rawBlob, elapsedMs);
       if (exportUsesFallback){
-        const blob = new Blob(exportChunks, { type: mime });
-        const exportUrl = URL.createObjectURL(blob);
+        const exportUrl = URL.createObjectURL(fixedBlob);
         const a = document.createElement('a');
         a.href = exportUrl;
         a.download = 'clipflex-export.webm';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(()=>URL.revokeObjectURL(exportUrl), 1000);
       } else {
+        await exportWritable.write(fixedBlob);
         await exportWritable.close();
       }
       showToast('Export complete!', 'success');
@@ -4261,6 +4632,7 @@ async function startExport(){
   $('#exportFill').style.width='0%';
   $('#exportPct').textContent='0%';
 
+  exportStartTime = Date.now();
   exportRecorder.start(1000);
   state.isPlaying = true;
   lastTick = null;
