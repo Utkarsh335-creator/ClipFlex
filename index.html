@@ -483,6 +483,8 @@
   .track-lane{position:absolute;inset:0;}
   .track-lane.dragover-ok{background:rgba(87,224,196,.06);}
   .track-lane.dragover-bad{background:rgba(240,104,92,.08);}
+  .track-row[data-track-type=audio],.track-row[data-track-type=text],.track-row[data-track-type=pip]{transition:height .12s ease;}
+
 
   .clip{
     position:absolute;top:26px;height:42px;
@@ -654,6 +656,85 @@
   @media (max-width: 880px){
     #app{grid-template-columns: var(--left-w, 220px) 6px 1fr var(--vr2-w, 0px) var(--insp-w, 0px);}
   }
+
+/* ===================== PHASE 3: STABLE TIMELINE UX ===================== */
+
+/* Each real timeline row gets its own subtle identity. */
+#rowVideo{
+  background:rgba(76,141,240,.075);
+  min-height:126px;
+}
+#rowAudio{
+  background:rgba(87,199,122,.065);
+  min-height:46px;
+}
+#rowText{
+  background:rgba(199,125,255,.065);
+  min-height:46px;
+}
+#rowPip{
+  background:rgba(255,122,168,.065);
+  min-height:46px;
+}
+
+/* Keep the labels slightly stronger than the row tint. */
+#rowVideo .track-label{
+  background:rgba(76,141,240,.16);
+  border-color:rgba(76,141,240,.30);
+}
+#rowAudio .track-label{
+  background:rgba(87,199,122,.14);
+  border-color:rgba(87,199,122,.28);
+}
+#rowText .track-label{
+  background:rgba(199,125,255,.14);
+  border-color:rgba(199,125,255,.28);
+}
+#rowPip .track-label{
+  background:rgba(255,122,168,.14);
+  border-color:rgba(255,122,168,.28);
+}
+
+/* Real grab area for resizing an individual timeline row. */
+.phase3-row-resize{
+  position:absolute;
+  left:0;right:0;bottom:0;
+  height:7px;
+  cursor:row-resize;
+  z-index:8;
+}
+.phase3-row-resize::after{
+  content:"";
+  position:absolute;
+  left:25%;right:25%;bottom:2px;
+  height:2px;border-radius:2px;
+  background:var(--border);
+  opacity:.45;
+}
+.phase3-row-resize:hover::after,
+.phase3-row-resize.dragging::after{
+  background:var(--accent);
+  opacity:1;
+}
+
+/* Expand/collapse affordance for the secondary tracks. */
+.phase3-row-toggle{
+  pointer-events:auto;
+  width:21px;height:21px;
+  margin-left:4px;
+  padding:0;
+  border:1px solid var(--border);
+  border-radius:5px;
+  background:var(--surface-2);
+  color:var(--text-dim);
+  font:700 12px/19px var(--sans);
+  cursor:pointer;
+}
+.phase3-row-toggle:hover{
+  color:var(--text);
+  border-color:var(--text-faint);
+}
+
 </style>
 </head>
 <body>
@@ -1214,6 +1295,27 @@ function totalDuration(){
   return Math.max(end, 0.001);
 }
 function rangesOverlap(aStart,aEnd,bStart,bEnd){ return aStart < bEnd - 1e-6 && bStart < aEnd - 1e-6; }
+function allowsOverlappingLayers(trackType){
+  return trackType==='audio' || trackType==='text' || trackType==='pip';
+}
+
+function manualLaneOf(clip){
+  return Number.isFinite(clip && clip._timelineLane)
+    ? Math.max(0, Math.floor(clip._timelineLane))
+    : 0;
+}
+function overlapsAnyInManualLane(trackType,start,duration,excludeIds=null,lane=0){
+  const end=start+duration;
+  const excluded=excludeIds||new Set();
+  for(const c of state.tracks[trackType]){
+    if(excluded.has(c.id)) continue;
+    if(allowsOverlappingLayers(trackType) && manualLaneOf(c)!==lane) continue;
+    const cStart=c.start, cEnd=c.start+clipDuration(c);
+    if(start<cEnd-1e-6 && end>cStart+1e-6) return true;
+  }
+  return false;
+}
+
 function overlapsAny(trackType, start, dur, excludeIds){
   const isExcluded = id => {
     if (!excludeIds) return false;
@@ -1535,13 +1637,14 @@ function addClip(trackType, media, start){
   const inPoint = 0;
   const outPoint = media.type === 'image' ? 5 : media.duration;
   const dur = outPoint - inPoint;
-  if (overlapsAny(trackType, start, dur, null)){
+  if (!allowsOverlappingLayers(trackType) && overlapsAny(trackType, start, dur, null)){
     showToast('Not enough free space on that track.', 'error');
     return null;
   }
   pushHistory();
   const clip = { id: uid(), mediaId: media.id, type: media.type, start, inPoint, outPoint, speed:1, volume:100, fadeIn:0, fadeOut:0, opacity:100, blur:0, crop:{x:0,y:0,w:1,h:1} };
   if (trackType==='pip'){ clip.pipBox = {x:0.62,y:0.62,w:0.28,h:0.28}; }
+  clip._timelineLane = 0;
   state.tracks[trackType].push(clip);
   renderTimeline();
   selectClip(clip.id);
@@ -1551,14 +1654,15 @@ function addClip(trackType, media, start){
 function addTextClip(){
   const start = clamp(state.playhead, 0, TIMELINE_CAP);
   const outPoint = 3;
-  if (overlapsAny('text', start, outPoint, null)){
+  if (!allowsOverlappingLayers('text') && overlapsAny('text', start, outPoint, null)){
     showToast('Not enough free space on the Text track there — move the playhead first.', 'error');
     return null;
   }
   pushHistory();
   const clip = {
     id: uid(), mediaId: null, type:'text', start, inPoint:0, outPoint, speed:1, volume:100,
-    content:'Your text here', font:"Arial, sans-serif", color:'#ffffff', size:48, position:{x:0.5,y:0.5}
+    content:'Your text here', font:"Arial, sans-serif", color:'#ffffff', size:48, position:{x:0.5,y:0.5},
+    _timelineLane:0
   };
   state.tracks.text.push(clip);
   renderTimeline();
@@ -1839,18 +1943,20 @@ function pipHitTest(clip, px, py){
   }
   return null;
 }
-function drawPipOverlay(clip){
+function drawPipOverlay(clip, sourceOverride=null){
   if (!clip) return;
   const media = mediaById(clip.mediaId);
   if (!media) return;
   const box = pipBoxPx(clip);
   let source, nw, nh;
   if (clip.type==='video'){
-    source = previewPipEl; nw = previewPipEl.videoWidth; nh = previewPipEl.videoHeight;
+    source = sourceOverride || getPipVideo(clip, media);
+    nw = source ? source.videoWidth : 0;
+    nh = source ? source.videoHeight : 0;
   } else {
-    const img = imgCache[media.id];
-    if (!img || !img.complete || !img.naturalWidth) return;
-    source = img; nw = img.naturalWidth; nh = img.naturalHeight;
+    source = sourceOverride || getPipImage(media);
+    if (!source || !source.complete || !source.naturalWidth) return;
+    nw = source.naturalWidth; nh = source.naturalHeight;
   }
   if (!nw || !nh) return;
   let sx=0, sy=0, sWidth=nw, sHeight=nh;
@@ -1915,9 +2021,97 @@ function activeClipAt(trackType, time){
   return null;
 }
 
+
 let currentVideoClipId = null;
 let currentAudioClipId = null;
 let imgCache = {};
+
+/* ---- stable PIP source pool ---- */
+const pipVideoPool = new Map();
+const pipImagePool = new Map();
+
+function requestPreviewPaint(){
+  if (typeof scheduleInteractivePreview === 'function') scheduleInteractivePreview();
+  else renderFrame(state.playhead);
+}
+
+function getPipVideo(clip, media){
+  let el = pipVideoPool.get(clip.id);
+  if (!el){
+    el = document.createElement('video');
+    el.className = 'hidden-media';
+    el.playsInline = true;
+    el.preload = 'auto';
+    el.muted = false;
+    el.addEventListener('loadedmetadata', requestPreviewPaint);
+    el.addEventListener('loadeddata', requestPreviewPaint);
+    el.addEventListener('canplay', requestPreviewPaint);
+    document.body.appendChild(el);
+    pipVideoPool.set(clip.id, el);
+  }
+  if (el.getAttribute('data-mid') !== media.id){
+    el.setAttribute('data-mid', media.id);
+    el.src = media.url;
+    try{ el.load(); }catch(_){}
+  }
+  return el;
+}
+
+function getPipImage(media){
+  let img = pipImagePool.get(media.id);
+  if (!img){
+    img = new Image();
+    img.decoding = 'async';
+    img.onload = requestPreviewPaint;
+    img.onerror = ()=>{};
+    img.src = media.url;
+    pipImagePool.set(media.id, img);
+  }
+  return img;
+}
+
+function cleanupPipSources(){
+  const livePips = new Set(state.tracks.pip.map(c=>c.id));
+  for (const [id,el] of pipVideoPool){
+    if (!livePips.has(id)){
+      try{ el.pause(); }catch(_){}
+      try{ el.removeAttribute('src'); el.load(); }catch(_){}
+      el.remove();
+      pipVideoPool.delete(id);
+    }
+  }
+  const liveImageIds = new Set(state.tracks.pip.map(c=>c.mediaId));
+  for (const [id,img] of pipImagePool){
+    if (!liveImageIds.has(id)) pipImagePool.delete(id);
+  }
+}
+
+function pauseAllPipVideos(){
+  for (const el of pipVideoPool.values()){
+    try{ if (!el.paused) el.pause(); }catch(_){}
+  }
+}
+
+function activePipsAt(time){
+  return state.tracks.pip
+    .filter(c=>{
+      const d = clipDuration(c);
+      return time >= c.start - 1e-6 && time < c.start + d - 1e-6;
+    })
+    .slice();
+}
+
+function topmostPipAtPoint(pips, px, py){
+  for (let i=pips.length-1; i>=0; i--){
+    const clip = pips[i];
+    const box = pipBoxPx(clip);
+    const hitMode = pipHitTest(clip, px, py);
+    const inBox = px>=box.x && px<=box.x+box.w && py>=box.y && py<=box.y+box.h;
+    if (hitMode || inBox) return {clip, hitMode};
+  }
+  return null;
+}
+
 
 /* ===================== TRANSITIONS (video <-> video, photo <-> photo, on Video or PIP track) =====================
    A transition lives on the earlier clip of an adjacent pair as clip.transitionOut = {type, duration}.
@@ -2131,8 +2325,20 @@ function renderFrame(time){
     }
   }
 
-  // ---- PIP overlay lane (drawn on top of main video, under text) ----
+  // ---- PIP overlay lane: render every active PIP in layer order ----
+  cleanupPipSources();
+
+  const activePips = activePipsAt(time);
+  const activePipIds = new Set(activePips.map(c=>c.id));
+  for (const [id,el] of pipVideoPool){
+    if (!activePipIds.has(id)){
+      try{ if (!el.paused) el.pause(); }catch(_){}
+    }
+  }
+
   const pipTrans = findTransitionAtTime('pip', time);
+  const transitionIds = pipTrans ? new Set([pipTrans.a.id, pipTrans.b.id]) : new Set();
+
   if (pipTrans){
     const box = pipBoxPx(pipTrans.a,time);
     ctx.save();
@@ -2144,33 +2350,39 @@ function renderFrame(time){
     ctx.lineWidth = 2;
     ctx.strokeRect(box.x, box.y, box.w, box.h);
     ctx.restore();
-  } else {
-    if (!previewPipElB.paused) previewPipElB.pause();
-    const pClip = activeClipAt('pip', time);
-    if (pClip){
-      const media = mediaById(pClip.mediaId);
-      if (pClip.type === 'video' && media){
-        if (previewPipEl.getAttribute('data-mid') !== media.id){
-          previewPipEl.src = media.url;
-          previewPipEl.setAttribute('data-mid', media.id);
-        }
-        const expected = clamp(pClip.inPoint + (time - pClip.start)*pClip.speed, 0, media.duration||9999);
-        if (Math.abs(previewPipEl.currentTime - expected) > 0.22){
-          try{ previewPipEl.currentTime = expected; }catch(e){}
-        }
-        previewPipEl.playbackRate = pClip.speed;
-        previewPipEl.volume = clamp((pClip.volume ?? 100)/100, 0, 1) * audioFadeFactor(pClip, time);
-        if (state.isPlaying){ if (previewPipEl.paused) previewPipEl.play().catch(()=>{}); }
-        else { if (!previewPipEl.paused) previewPipEl.pause(); }
-      } else if (pClip.type === 'image' && media){
-        if (!previewPipEl.paused) previewPipEl.pause();
-        let img = imgCache[media.id];
-        if (!img){ img = new Image(); img.src = media.url; imgCache[media.id]=img; }
+  }
+
+  for (const pClip of activePips){
+    if (transitionIds.has(pClip.id)) continue;
+    const media = mediaById(pClip.mediaId);
+    if (!media) continue;
+
+    let source = null;
+    if (pClip.type==='video'){
+      source = getPipVideo(pClip, media);
+      if (!source) continue;
+
+      const expected = clamp(
+        pClip.inPoint + (time-pClip.start)*pClip.speed,
+        0,
+        media.duration||9999
+      );
+      if (source.readyState >= 1 && Math.abs((source.currentTime||0)-expected)>0.22){
+        try{ source.currentTime = expected; }catch(_){}
       }
-      drawPipOverlay(pClip);
-    } else {
-      if (!previewPipEl.paused) previewPipEl.pause();
+      source.playbackRate = pClip.speed;
+      source.volume = clamp((pClip.volume ?? 100)/100,0,1) * audioFadeFactor(pClip,time);
+
+      if (state.isPlaying){
+        if (source.readyState >= 2 && source.paused) source.play().catch(()=>{});
+      } else if (!source.paused){
+        source.pause();
+      }
+    }else{
+      source = getPipImage(media);
     }
+
+    drawPipOverlay(pClip, source);
   }
 
   // ---- text lane (drawn on top, doesn't clear the canvas) ----
@@ -2212,15 +2424,12 @@ function updateTransportUI(time){
 canvas.addEventListener('mousemove', e=>{
   if (state.previewMode !== 'timeline' || state.exporting) return;
   if (chromaPickArmed){ canvas.style.cursor = 'crosshair'; return; }
-  const pClip = activeClipAt('pip', state.playhead);
-  if (!pClip){ canvas.style.cursor = ''; return; }
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const p = { x:(e.clientX-rect.left)*scaleX, y:(e.clientY-rect.top)*scaleY };
-  const box = pipBoxPx(pClip);
-  const hitMode = pipHitTest(pClip, p.x, p.y);
-  const inBox = p.x>=box.x && p.x<=box.x+box.w && p.y>=box.y && p.y<=box.y+box.h;
-  canvas.style.cursor = hitMode ? PIP_CURSOR_MAP[hitMode] : inBox ? 'move' : '';
+  const hit = topmostPipAtPoint(activePipsAt(state.playhead), p.x, p.y);
+  if (!hit){ canvas.style.cursor = ''; return; }
+  canvas.style.cursor = hit.hitMode ? PIP_CURSOR_MAP[hit.hitMode] : 'move';
 });
 
 /* ---- drag the active PIP box (all edges/corners resize it, Canva-style) or text layer ---- */
@@ -2231,19 +2440,14 @@ canvas.addEventListener('mousedown', e=>{
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const toCanvasPx = ev => ({ x:(ev.clientX-rect.left)*scaleX, y:(ev.clientY-rect.top)*scaleY });
 
-  const pClip = activeClipAt('pip', state.playhead);
-  if (pClip){
-    const box = pipBoxPx(pClip);
-    const p = toCanvasPx(e);
-    const hitMode = pipHitTest(pClip, p.x, p.y);
-    const inBox = p.x>=box.x && p.x<=box.x+box.w && p.y>=box.y && p.y<=box.y+box.h;
-    if (hitMode || inBox){
-      e.preventDefault();
-      selectClip(pClip.id);
-      if (hitMode) startPipResize(pClip, hitMode, e, rect);
-      else startPipMove(pClip, e, rect);
-      return;
-    }
+  const p = toCanvasPx(e);
+  const hit = topmostPipAtPoint(activePipsAt(state.playhead), p.x, p.y);
+  if (hit){
+    e.preventDefault();
+    selectClip(hit.clip.id);
+    if (hit.hitMode) startPipResize(hit.clip, hit.hitMode, e, rect);
+    else startPipMove(hit.clip, e, rect);
+    return;
   }
 
   const tClip = activeClipAt('text', state.playhead);
@@ -2259,12 +2463,12 @@ canvas.addEventListener('mousedown', e=>{
     if (!pushed){ pushHistory(); pushed = true; }
     tClip.position = toNorm(ev);
     if(tClip.keyframes&&tClip.keyframes.textPosition&&tClip.keyframes.textPosition.length) upsertKeyframe(tClip,'textPosition',localClipTime(tClip,state.playhead),tClip.position);
-    renderFrame(state.playhead);
+    scheduleInteractivePreview();
   };
   const onUp = ()=>{
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
-    if (pushed) renderTimeline();
+    if (pushed) { renderTimeline(); renderFrame(state.playhead); }
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
@@ -2386,6 +2590,7 @@ function pauseTimeline(){
   $('#playIcon').innerHTML = '<path d="M8 5v14l11-7z"/>';
   if (!previewVideoEl.paused) previewVideoEl.pause();
   if (!previewAudioEl.paused) previewAudioEl.pause();
+  pauseAllPipVideos();
 }
 function togglePlay(){ state.isPlaying ? pauseTimeline() : playTimeline(); }
 
@@ -2450,13 +2655,63 @@ function renderTimeline(){
 
 function renderLane(laneEl, trackType){
   laneEl.innerHTML = '';
-  state.tracks[trackType].forEach(clip=>{
+  const clips = [...state.tracks[trackType]].sort((a,b)=>a.start-b.start || a.id.localeCompare(b.id));
+  const multiLayer = allowsOverlappingLayers(trackType);
+
+  // Manual sub-lanes: the editor NEVER changes a clip's vertical lane
+  // because of overlap or horizontal movement. A lane only changes through an
+  // explicit user action.
+  const clipLane = new Map();
+  clips.forEach(clip=>{
+    const lane = Number.isFinite(clip._timelineLane)
+      ? Math.max(0, Math.floor(clip._timelineLane))
+      : 0;
+    clip._timelineLane = lane;
+    clipLane.set(clip.id, lane);
+  });
+
+  const laneCount = Math.max(
+    1,
+    ...clips.map(clip => (clipLane.get(clip.id) || 0) + 1)
+  );
+  const rowEl = laneEl.parentElement;
+  if (rowEl){
+    const type = rowEl.dataset.trackType;
+    const requiredHeight = (type==='video')
+      ? Math.max(126, 26 + laneCount*50)
+      : Math.max(46, 26 + laneCount*50);
+
+    // Rendering must never overwrite the user's chosen row height.
+    // Store the minimum needed for the current number of manual sub-lanes;
+    // the resize controller decides the actual visible height.
+    rowEl.dataset.requiredHeight = String(requiredHeight);
+
+    const userHeight = Number(rowEl.dataset.userHeight);
+    const minHeight = (type==='video') ? 72 : 34;
+
+    // User resizing is authoritative. Content must reflow inside the row,
+    // not make the row impossible to shrink.
+    rowEl.style.minHeight = minHeight + 'px';
+    rowEl.style.height = (Number.isFinite(userHeight)
+      ? Math.max(minHeight,userHeight)
+      : requiredHeight) + 'px';
+  }
+
+  clips.forEach(clip=>{
     const media = mediaById(clip.mediaId);
     const el = document.createElement('div');
     const isPrimary = clip.id===state.selectedClipId;
     const isMulti = state.selectedClipIds.has(clip.id) && !isPrimary;
     el.className = `clip ${clip.type}` + (isPrimary ? ' selected':'') + (isMulti ? ' multi-selected':'');
     el.style.left = (clip.start*state.pxPerSec)+'px';
+    const rowNow=laneEl.parentElement;
+    const rowH=rowNow ? rowNow.getBoundingClientRect().height : 76;
+    const lane=(clipLane.get(clip.id)||0);
+    const laneCountNow=Math.max(1,...clips.map(c=>(clipLane.get(c.id)||0)+1));
+    const usableTop=24;
+    const usableH=Math.max(14,rowH-usableTop-8);
+    const laneStep=laneCountNow>1 ? usableH/laneCountNow : 0;
+    el.style.top=(laneCountNow>1 ? usableTop+lane*laneStep : Math.max(20,(rowH-42)/2))+'px';
     el.style.width = Math.max(10, clipDuration(clip)*state.pxPerSec)+'px';
     el.dataset.clipId = clip.id;
     el.dataset.track = trackType;
@@ -2487,18 +2742,37 @@ function renderLane(laneEl, trackType){
     laneEl.appendChild(el);
     keyframePropsFor(clip,trackType).forEach(prop=>{
       ((clip.keyframes&&clip.keyframes[prop])||[]).forEach(k=>{
-        const mark=document.createElement('div'); mark.className='keyframe-marker'; mark.style.left=((clip.start+k.t)*state.pxPerSec)+'px'; mark.title=`Keyframe · ${KEYFRAME_PROPS[prop]} · ${fmtTime(k.t)}`; laneEl.appendChild(mark);
+        const mark=document.createElement('div');
+        mark.className='keyframe-marker';
+        mark.style.left=((clip.start+k.t)*state.pxPerSec)+'px';
+        const kr=laneEl.parentElement;
+        const kh=kr ? kr.getBoundingClientRect().height : 76;
+        const kl=(clipLane.get(clip.id)||0);
+        const kc=Math.max(1,...clips.map(c=>(clipLane.get(c.id)||0)+1));
+        const ku=Math.max(14,kh-32);
+        const ks=kc>1 ? ku/kc : 0;
+        mark.style.top=(kc>1 ? 26+kl*ks : Math.max(22,(kh-40)/2))+'px';
+        mark.title=`Keyframe · ${KEYFRAME_PROPS[prop]} · ${fmtTime(k.t)}`;
+        laneEl.appendChild(mark);
       });
     });
   });
+
   if (trackType==='video' || trackType==='pip'){
-    state.tracks[trackType].forEach(clip=>{
+    clips.forEach(clip=>{
       const trans = getClipTransition(trackType, clip);
       if (!trans) return;
       const boundary = clip.start + clipDuration(clip);
       const badge = document.createElement('div');
       badge.className = 'transition-badge';
       badge.style.left = (boundary*state.pxPerSec)+'px';
+      const tr=laneEl.parentElement;
+      const th=tr ? tr.getBoundingClientRect().height : 76;
+      const tl=(clipLane.get(clip.id)||0);
+      const tc=Math.max(1,...clips.map(c=>(clipLane.get(c.id)||0)+1));
+      const tu=Math.max(14,th-32);
+      const ts=tc>1 ? tu/tc : 0;
+      badge.style.top=(tc>1 ? 26+tl*ts+6 : Math.max(22,(th-34)/2))+'px';
       badge.title = `${TRANSITION_LABELS[trans.type]||trans.type} · ${trans.duration.toFixed(2)}s — click to edit`;
       badge.innerHTML = transitionIconSvg('crossfade');
       badge.addEventListener('click', e=>{
@@ -2510,7 +2784,6 @@ function renderLane(laneEl, trackType){
     });
   }
 }
-
 const snapGuideEl = $('#snapGuide');
 function showSnapGuide(time){
   if (time == null){ snapGuideEl.style.display='none'; return; }
@@ -2521,65 +2794,134 @@ function hideSnapGuide(){ snapGuideEl.style.display='none'; }
 
 /* ---- move clip via drag ---- */
 function attachClipDrag(el, clip, trackType){
-  let dragging=false, startX=0, moved=false, group=[];
+  let dragging=false, startX=0, startY=0, moved=false, group=[];
+  let originalLane=0, pendingLane=0;
+
   el.addEventListener('mousedown', e=>{
     if (e.button!==0) return;
-    if (e.target.closest('.trim-handle')) return; // handled separately
-    if (e.shiftKey||e.ctrlKey||e.metaKey) return; // let the click handler manage multi-select toggling
-    dragging=true; moved=false;
-    startX = e.clientX;
+    if (e.target.closest('.trim-handle')) return;
+    if (e.shiftKey||e.ctrlKey||e.metaKey) return;
+
+    dragging=true;
+    moved=false;
+    startX=e.clientX;
+    startY=e.clientY;
+
+    originalLane = Number.isFinite(clip._timelineLane)
+      ? Math.max(0, Math.floor(clip._timelineLane))
+      : 0;
+    pendingLane = originalLane;
+
     const isGroup = state.selectedClipIds.has(clip.id) && state.selectedClipIds.size>1;
     if (!isGroup) selectClip(clip.id);
-    else state.selectedClipId = clip.id;
+    else state.selectedClipId=clip.id;
+
     e.preventDefault();
+
     const ids = isGroup ? Array.from(state.selectedClipIds) : [clip.id];
     group = ids.map(id=>{
-      const found = findClip(id);
+      const found=findClip(id);
       if (!found) return null;
-      return { clip: found.clip, track: found.track, origStart: found.clip.start,
-        el: document.querySelector(`.clip[data-clip-id="${id}"]`) };
+
+      return {
+        clip:found.clip,
+        track:found.track,
+        origStart:found.clip.start,
+        origLane:Number.isFinite(found.clip._timelineLane) ? found.clip._timelineLane : 0,
+        el:document.querySelector(`.clip[data-clip-id="${id}"]`)
+      };
     }).filter(Boolean);
-    const anchorEntry = group.find(g=>g.clip.id===clip.id);
-    const anchorDur = clipDuration(clip);
-    const onMove = ev=>{
+
+    const anchorEntry=group.find(g=>g.clip.id===clip.id);
+    const anchorDur=clipDuration(clip);
+
+    const onMove=ev=>{
       if (!dragging) return;
-      const dx = ev.clientX - startX;
-      if (Math.abs(dx) > 3) moved = true;
-      const rawStart = clamp(anchorEntry.origStart + dx/state.pxPerSec, 0, TIMELINE_CAP);
-      const snappedAnchor = snapStart(rawStart, anchorDur, clip.id);
-      const delta = snappedAnchor - anchorEntry.origStart;
+
+      const dx=ev.clientX-startX;
+      const dy=ev.clientY-startY;
+
+      if (Math.abs(dx)>3 || Math.abs(dy)>3) moved=true;
+
+      // Horizontal position always follows the mouse horizontally.
+      const rawStart=clamp(
+        anchorEntry.origStart + dx/state.pxPerSec,
+        0,
+        TIMELINE_CAP
+      );
+      const snappedAnchor=snapStart(rawStart,anchorDur,clip.id);
+      const delta=snappedAnchor-anchorEntry.origStart;
+
+      // Vertical movement is entirely manual. The user decides the lane
+      // by dragging up/down; no overlap test or time change can alter it.
+      if (allowsOverlappingLayers(trackType)){
+        pendingLane=Math.max(
+          0,
+          Math.round(originalLane + dy/50)
+        );
+      }else{
+        pendingLane=0;
+      }
+
       group.forEach(g=>{
-        const ns = Math.max(0, g.origStart + delta);
-        g.pendingStart = ns;
-        if (g.el) g.el.style.left = (ns*state.pxPerSec)+'px';
-      });
-      showSnapGuide(Math.abs(snappedAnchor-rawStart) > 1e-6 ? snappedAnchor : null);
-    };
-    const onUp = ()=>{
-      dragging=false;
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      hideSnapGuide();
-      if (moved && group.length){
-        const groupIdSet = new Set(group.map(g=>g.clip.id));
-        let conflict = false;
-        for (const g of group){
-          const ns = Math.round(g.pendingStart*1000)/1000;
-          if (overlapsAny(g.track, ns, clipDuration(g.clip), groupIdSet)){ conflict = true; break; }
+        const ns=Math.max(0,g.origStart+delta);
+        g.pendingStart=ns;
+        g.pendingLane=(g.clip.id===clip.id) ? pendingLane : g.origLane;
+
+        if (g.el){
+          g.el.style.left=(ns*state.pxPerSec)+'px';
+          g.el.style.top=(26+g.pendingLane*50)+'px';
         }
-        if (conflict){
-          showToast("Still overlapping — drop it a little further from the other clip.", 'error');
+      });
+
+      showSnapGuide(
+        Math.abs(snappedAnchor-rawStart)>1e-6 ? snappedAnchor : null
+      );
+    };
+
+    const onUp=()=>{
+      dragging=false;
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+      hideSnapGuide();
+
+      if (moved && group.length){
+        const groupIdSet=new Set(group.map(g=>g.clip.id));
+        let conflict=false;
+
+        // Keep the existing horizontal overlap validation.
+        for(const g of group){
+          const ns=Math.round(g.pendingStart*1000)/1000;
+          const lane=Number.isFinite(g.pendingLane) ? Math.max(0,Math.floor(g.pendingLane)) : manualLaneOf(g.clip);
+          const hasConflict=allowsOverlappingLayers(g.track)
+            ? overlapsAnyInManualLane(g.track,ns,clipDuration(g.clip),groupIdSet,lane)
+            : overlapsAny(g.track,ns,clipDuration(g.clip),groupIdSet);
+          if(hasConflict){ conflict=true; break; }
+        }
+
+        if(conflict){
+          showToast("Still overlapping — drop it a little further from the other clip.",'error');
           renderTimeline();
-        } else {
+        }else{
           pushHistory();
-          group.forEach(g=>{ g.clip.start = Math.round(g.pendingStart*1000)/1000; });
+          group.forEach(g=>{
+            g.clip.start=Math.round(g.pendingStart*1000)/1000;
+            if(g.clip.id===clip.id && allowsOverlappingLayers(g.track)){
+              g.clip._timelineLane=Math.max(
+                0,
+                Math.floor(g.pendingLane)
+              );
+            }
+          });
           renderTimeline();
         }
       }
-      group = [];
+
+      group=[];
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
   });
 }
 
@@ -2587,6 +2929,7 @@ function attachClipDrag(el, clip, trackType){
 function attachTrimHandles(el, clip, trackType){
   const minDur = 0.15;
   function neighborBounds(){
+    if (allowsOverlappingLayers(trackType)) return { prevEnd: 0, nextStart: TIMELINE_CAP };
     const others = state.tracks[trackType].filter(c=>c.id!==clip.id).sort((a,b)=>a.start-b.start);
     let prevEnd = 0, nextStart = TIMELINE_CAP;
     others.forEach(c=>{
@@ -2872,7 +3215,7 @@ function applySpeed(newSpeed){
   const { clip, track } = found;
   newSpeed = clamp(newSpeed, 0.1, 8);
   const newDur = (clip.outPoint-clip.inPoint)/newSpeed;
-  if (overlapsAny(track, clip.start, newDur, clip.id)){
+  if (!allowsOverlappingLayers(track) && overlapsAny(track, clip.start, newDur, clip.id)){
     showToast('Speed change would overlap the next clip.', 'error');
     renderInspector();
     return;
@@ -2901,7 +3244,7 @@ function applyImageDuration(newDuration){
   // uses the clip's own speed (normally 1 for images) so this stays correct even for
   // image clips carried over from before duration control existed
   const newOutPoint = clip.inPoint + newDuration*clip.speed;
-  if (overlapsAny(track, clip.start, newDuration, clip.id)){
+  if (!allowsOverlappingLayers(track) && overlapsAny(track, clip.start, newDuration, clip.id)){
     showToast('That duration would overlap the next clip.', 'error');
     renderInspector();
     return;
@@ -3240,13 +3583,14 @@ window.addEventListener('mousemove', e=>{
   if (!isEndpoint) points[idx].x = clamp(pxToCurveX(px), minX, maxX);
   invalidateCurveLUT(clip.curves);
   drawCurvesEditor(clip);
-  renderFrame(state.playhead);
+  scheduleInteractivePreview();
 });
 window.addEventListener('mouseup', ()=>{
   if (!curveDrag) return;
   curveDrag = null;
   pushHistory();
   renderTimeline();
+  renderFrame(state.playhead);
 });
 $('#btnCurvesResetChannel').addEventListener('click', ()=>{
   const found = findClip(state.selectedClipId);
@@ -3364,6 +3708,40 @@ function hslToRgb(h,s,l){
 }
 // Applies curves and/or HSL in a single getImageData/putImageData round trip
 // (avoids doing two full pixel readbacks on the same rect when both are active).
+let interactivePreviewRAF = 0;
+let interactivePreviewPending = false;
+let interactivePreviewActive = false;
+function scheduleInteractivePreview(){
+  interactivePreviewPending = true;
+  if (interactivePreviewRAF) return;
+  interactivePreviewRAF = requestAnimationFrame(()=>{
+    interactivePreviewRAF = 0;
+    if (!interactivePreviewPending) return;
+    interactivePreviewPending = false;
+    interactivePreviewActive = true;
+    try { renderFrame(state.playhead); } finally { interactivePreviewActive = false; }
+  });
+}
+
+const hslPreviewCache = new Map();
+let hslPreviewCacheKey = '';
+function hslPreviewRGB(r,g,b,hsl){
+  const key = `${hsl.h}|${hsl.s}|${hsl.l}`;
+  if (key !== hslPreviewCacheKey){ hslPreviewCache.clear(); hslPreviewCacheKey=key; }
+  // Quantize only the interactive preview lookup. Final/export rendering keeps exact pixels.
+  const rq=r>>3, gq=g>>3, bq=b>>3;
+  const ck=(rq<<10)|(gq<<5)|bq;
+  let out=hslPreviewCache.get(ck);
+  if (!out){
+    const rr=rq*8+4, gg=gq*8+4, bb=bq*8+4;
+    const [h0,s0,l0]=rgbToHsl(rr,gg,bb);
+    out=hslToRgb(h0+hsl.h,clamp(s0+hsl.s,0,100),clamp(l0+hsl.l,0,100));
+    if(hslPreviewCache.size>32768) hslPreviewCache.clear();
+    hslPreviewCache.set(ck,out);
+  }
+  return out;
+}
+
 function applyColorFxToRect(curves, hsl, x, y, w, h){
   const hasCurves = curves && !curvesAreIdentity(curves);
   const hasHSL = hsl && !hslIsIdentity(hsl);
@@ -3380,8 +3758,12 @@ function applyColorFxToRect(curves, hsl, x, y, w, h){
     let r=d[i], g=d[i+1], b=d[i+2];
     if (lut){ r=lut.r[r]; g=lut.g[g]; b=lut.b[b]; }
     if (hasHSL){
-      const [h0,s0,l0] = rgbToHsl(r, g, b);
-      [r,g,b] = hslToRgb(h0 + hsl.h, clamp(s0 + hsl.s, 0, 100), clamp(l0 + hsl.l, 0, 100));
+      if (interactivePreviewActive) {
+        [r,g,b] = hslPreviewRGB(r,g,b,hsl);
+      } else {
+        const [h0,s0,l0] = rgbToHsl(r, g, b);
+        [r,g,b] = hslToRgb(h0 + hsl.h, clamp(s0 + hsl.s, 0, 100), clamp(l0 + hsl.l, 0, 100));
+      }
     }
     d[i]=r; d[i+1]=g; d[i+2]=b;
   }
@@ -3467,7 +3849,7 @@ HSL_WHEELS.forEach(cfg=>{
     hslDrag = { clip: found.clip, cfg };
     setHSLFromAngle(found.clip, cfg, angleFromEvent(canvasEl, e));
     drawAllHSLWheels(found.clip);
-    renderFrame(state.playhead);
+    scheduleInteractivePreview();
     e.preventDefault();
   });
   canvasEl.addEventListener('dblclick', ()=>{
@@ -3484,13 +3866,14 @@ window.addEventListener('mousemove', e=>{
   const canvasEl = $('#'+hslDrag.cfg.id);
   setHSLFromAngle(hslDrag.clip, hslDrag.cfg, angleFromEvent(canvasEl, e));
   drawAllHSLWheels(hslDrag.clip);
-  renderFrame(state.playhead);
+  scheduleInteractivePreview();
 });
 window.addEventListener('mouseup', ()=>{
   if (!hslDrag) return;
   hslDrag = null;
   pushHistory();
   renderTimeline();
+  renderFrame(state.playhead);
 });
 $('#btnHSLReset').addEventListener('click', ()=>{
   const found = findClip(state.selectedClipId);
@@ -3498,7 +3881,7 @@ $('#btnHSLReset').addEventListener('click', ()=>{
   delete found.clip.hsl;
   pushHistory();
   drawAllHSLWheels(found.clip);
-  renderTimeline(); renderFrame(state.playhead);
+  renderTimeline(); scheduleInteractivePreview();
 });
 
 /* ---- interactive crop tool (drag a box directly on the preview, like a photo editor) ---- */
@@ -3509,8 +3892,8 @@ const HANDLE_DIRS = ['n','s','e','w','nw','ne','sw','se'];
 
 function getClipNaturalSize(clip, media, track){
   if (clip.type==='video'){
-    const vidEl = track==='pip' ? previewPipEl : previewVideoEl;
-    return { w: vidEl.videoWidth, h: vidEl.videoHeight };
+    const vidEl = track==='pip' ? getPipVideo(clip, mediaById(clip.mediaId)) : previewVideoEl;
+    return { w: vidEl ? vidEl.videoWidth : 0, h: vidEl ? vidEl.videoHeight : 0 };
   }
   const img = media ? imgCache[media.id] : null;
   return { w: (img&&img.naturalWidth)||0, h: (img&&img.naturalHeight)||0 };
@@ -3606,7 +3989,7 @@ function enterCropMode(){
   // Show the full, uncropped source filling the whole canvas while cropping. This gives a large,
   // precise working area and keeps the crop box perfectly aligned with what's on screen — for a
   // PIP clip the same tool now works exactly like it does on the main Video track.
-  const source = clip.type==='video' ? (track==='pip' ? previewPipEl : previewVideoEl) : imgCache[media.id];
+  const source = clip.type==='video' ? (track==='pip' ? getPipVideo(clip, media) : previewVideoEl) : imgCache[media.id];
   if (source) drawContain(source, nat.w, nat.h, null);
   cropState = { clip, track, natW: nat.w, natH: nat.h, rect: { ...(clip.crop || {x:0,y:0,w:1,h:1}) } };
   buildCropDOM();
@@ -3938,7 +4321,7 @@ function duplicateSelectedClip(){
   let start = null;
   for (const candidate of candidates){
     const test = Math.max(0, Math.min(TIMELINE_CAP-dur, candidate));
-    if (!overlapsAny(trackType, test, dur, null)){ start = test; break; }
+    if (allowsOverlappingLayers(trackType) || !overlapsAny(trackType, test, dur, null)){ start = test; break; }
   }
   if (start == null){ showToast('No free space to duplicate the clip.', 'error'); return; }
   pushHistory();
@@ -4927,5 +5310,175 @@ init();
 
 })();
 </script>
+
+<script>
+(function(){
+  const ROWS = {
+    video: document.getElementById('rowVideo'),
+    audio: document.getElementById('rowAudio'),
+    text: document.getElementById('rowText'),
+    pip: document.getElementById('rowPip')
+  };
+
+  const DEFAULTS = { video:126, audio:46, text:46, pip:46 };
+  const MINIMUMS = { video:96, audio:46, text:46, pip:46 };
+  const STORAGE_KEY = 'clipflex_timeline_row_heights_v2';
+
+  let saved = {};
+  try{
+    saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}') || {};
+  }catch(_){ saved = {}; }
+
+  function setRowHeight(type, px, persist=true){
+    const row = ROWS[type];
+    if (!row) return;
+
+    const min = Math.max(
+      MINIMUMS[type] || 46,
+      Number(row.dataset.requiredHeight) || 0
+    );
+    const value = Math.max(min, Math.round(px));
+
+    row.dataset.userHeight = String(value);
+    row.style.minHeight = min + 'px';
+    row.style.height = value + 'px';
+
+    if (persist){
+      saved[type] = value;
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); }catch(_){}
+    }
+  }
+
+  function restoreHeights(){
+    Object.keys(ROWS).forEach(type=>{
+      const value = Number(saved[type]);
+      if (Number.isFinite(value)){
+        ROWS[type].dataset.userHeight = String(value);
+        ROWS[type].style.height = value + 'px';
+      }else{
+        ROWS[type].dataset.userHeight = String(DEFAULTS[type]);
+        ROWS[type].style.height = DEFAULTS[type] + 'px';
+      }
+    });
+  }
+
+  function rerender(){
+    if (typeof renderTimeline === 'function') renderTimeline();
+  }
+
+  function addResizeHandle(type){
+    const row = ROWS[type];
+    if (!row || row.querySelector('.phase3-row-resize')) return;
+
+    const handle = document.createElement('div');
+    handle.className = 'phase3-row-resize';
+    handle.title = 'Drag to resize track';
+    row.appendChild(handle);
+
+    handle.addEventListener('mousedown', e=>{
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const startY = e.clientY;
+      const startH = row.getBoundingClientRect().height;
+      handle.classList.add('dragging');
+      document.body.style.cursor = 'row-resize';
+      document.body.style.userSelect = 'none';
+
+      function onMove(ev){
+        const next = startH + (ev.clientY - startY);
+        setRowHeight(type, next, false);
+        if (typeof renderTimeline === 'function') renderTimeline();
+      }
+
+      function onUp(){
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        handle.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+
+        const finalHeight = Math.max(
+          MINIMUMS[type] || 46,
+          Math.round(row.getBoundingClientRect().height)
+        );
+        setRowHeight(type, finalHeight, true);
+        rerender();
+      }
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function addToggle(type){
+    if (type === 'video') return;
+    const row = ROWS[type];
+    if (!row) return;
+
+    const label = row.querySelector('.track-label');
+    if (!label || label.querySelector('.phase3-row-toggle')) return;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'phase3-row-toggle';
+    btn.textContent = '−';
+    btn.title = 'Collapse track';
+
+    btn.addEventListener('click', e=>{
+      e.preventDefault();
+      e.stopPropagation();
+
+      const collapsed = row.dataset.collapsed === '1';
+
+      if (collapsed){
+        row.dataset.collapsed = '0';
+        btn.textContent = '−';
+        btn.title = 'Collapse track';
+
+        const restored = Number(saved[type]);
+        setRowHeight(
+          type,
+          Number.isFinite(restored) ? restored : DEFAULTS[type],
+          false
+        );
+      }else{
+        row.dataset.collapsed = '1';
+        btn.textContent = '+';
+        btn.title = 'Expand track';
+        row.dataset.preCollapseHeight = String(row.getBoundingClientRect().height);
+        row.style.height = '28px';
+        row.style.minHeight = '28px';
+      }
+
+      rerender();
+    });
+
+    label.appendChild(btn);
+  }
+
+  function initPhase3(){
+    restoreHeights();
+
+    Object.keys(ROWS).forEach(type=>{
+      addResizeHandle(type);
+      addToggle(type);
+    });
+
+    rerender();
+  }
+
+  if (document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initPhase3, {once:true});
+  }else{
+    initPhase3();
+  }
+})();
+</script>
+
+
+
+
 </body>
 </html>
