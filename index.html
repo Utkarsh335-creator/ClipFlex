@@ -787,6 +787,10 @@
         <option value="1080x1350">4:5 Portrait</option>
       </select>
       <div class="divider-v"></div>
+      <div class="divider-v"></div>
+      <button class="icon-btn" id="btnNewProject" title="Start a new project (clears the current timeline and media)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
       <button class="icon-btn" id="btnOpenProject" title="Open project from your device">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>
       </button>
@@ -1316,6 +1320,42 @@ function overlapsAny(trackType, start, dur, excludeIds){
   });
 }
 
+/* "Next open parking spot" placement: when the spot the user asked for is already taken on a
+   track, find the closest free gap on that same track instead of just refusing. Searches every
+   gap between existing clips (plus the open-ended gap after the last clip, which always has
+   room), and picks whichever gap-position lands nearest the spot the user actually wanted —
+   so a clip dropped onto a full spot slides to the next opening rather than erroring out. */
+function findFreeSlot(trackType, desiredStart, dur, excludeIds){
+  desiredStart = Math.max(0, desiredStart);
+  const isExcluded = id => {
+    if (!excludeIds) return false;
+    if (excludeIds instanceof Set) return excludeIds.has(id);
+    return id === excludeIds;
+  };
+  const others = state.tracks[trackType]
+    .filter(c=>!isExcluded(c.id))
+    .map(c=>({start:c.start, end:c.start+clipDuration(c)}))
+    .sort((a,b)=>a.start-b.start);
+  const gaps = [];
+  let cursor = 0;
+  others.forEach(o=>{
+    if (o.start - cursor > 1e-6) gaps.push({start:cursor, end:o.start});
+    cursor = Math.max(cursor, o.end);
+  });
+  gaps.push({start:cursor, end:Infinity}); // there's always room after the last clip
+  let best = null, bestDist = Infinity;
+  gaps.forEach(g=>{
+    const gapLen = g.end===Infinity ? Infinity : g.end - g.start;
+    if (gapLen + 1e-6 < dur) return; // too small to fit this clip
+    const candidate = g.end===Infinity
+      ? Math.max(desiredStart, g.start)
+      : Math.min(Math.max(desiredStart, g.start), g.end - dur);
+    const dist = Math.abs(candidate - desiredStart);
+    if (dist < bestDist - 1e-9){ bestDist = dist; best = candidate; }
+  });
+  return best;
+}
+
 /* ---- magnetic snapping: lets clips click together edge-to-edge instead of erroring on near-misses ---- */
 const SNAP_PX = 10;
 function collectSnapTargets(excludeId){
@@ -1625,25 +1665,40 @@ function addClip(trackType, media, start){
   const inPoint = 0;
   const outPoint = media.type === 'image' ? 5 : media.duration;
   const dur = outPoint - inPoint;
+  let placedStart = start;
+  let bumped = false;
   if (!allowsOverlappingLayers(trackType) && overlapsAny(trackType, start, dur, null)){
-    showToast('Not enough free space on that track.', 'error');
-    return null;
+    const free = findFreeSlot(trackType, start, dur, null);
+    if (free == null){
+      showToast('Not enough free space on that track.', 'error');
+      return null;
+    }
+    placedStart = Math.round(free*1000)/1000;
+    bumped = true;
   }
   pushHistory();
-  const clip = { id: uid(), mediaId: media.id, type: media.type, start, inPoint, outPoint, speed:1, volume:100, fadeIn:0, fadeOut:0, opacity:100, blur:0, crop:{x:0,y:0,w:1,h:1} };
+  const clip = { id: uid(), mediaId: media.id, type: media.type, start: placedStart, inPoint, outPoint, speed:1, volume:100, fadeIn:0, fadeOut:0, opacity:100, blur:0, crop:{x:0,y:0,w:1,h:1} };
   if (trackType==='pip'){ clip.pipBox = {x:0.62,y:0.62,w:0.28,h:0.28}; }
   state.tracks[trackType].push(clip);
   renderTimeline();
   selectClip(clip.id);
+  if (bumped) showToast('That spot was taken — placed in the next open space on the track.', 'success');
   return clip;
 }
 
 function addTextClip(){
-  const start = clamp(state.playhead, 0, TIMELINE_CAP);
+  const desiredStart = clamp(state.playhead, 0, TIMELINE_CAP);
   const outPoint = 3;
-  if (!allowsOverlappingLayers('text') && overlapsAny('text', start, outPoint, null)){
-    showToast('Not enough free space on the Text track there — move the playhead first.', 'error');
-    return null;
+  let start = desiredStart;
+  let bumped = false;
+  if (!allowsOverlappingLayers('text') && overlapsAny('text', desiredStart, outPoint, null)){
+    const free = findFreeSlot('text', desiredStart, outPoint, null);
+    if (free == null){
+      showToast('Not enough free space on the Text track there — move the playhead first.', 'error');
+      return null;
+    }
+    start = Math.round(free*1000)/1000;
+    bumped = true;
   }
   pushHistory();
   const clip = {
@@ -1653,6 +1708,7 @@ function addTextClip(){
   state.tracks.text.push(clip);
   renderTimeline();
   selectClip(clip.id);
+  if (bumped) showToast('That spot was taken — placed in the next open space on the Text track.', 'success');
   return clip;
 }
 
@@ -3475,7 +3531,8 @@ curvesCanvasEl.addEventListener('mousedown', e=>{
   invalidateCurveLUT(curves);
   curveDrag = { clip, points, idx };
   drawCurvesEditor(clip);
-  renderFrame(state.playhead);
+  // Preview stays as-is until the point is released (dragMove below) — avoids
+  // running the full-canvas pixel pass on every mouse movement.
   e.preventDefault();
 });
 curvesCanvasEl.addEventListener('dblclick', e=>{
@@ -3508,14 +3565,14 @@ window.addEventListener('mousemove', e=>{
   if (!isEndpoint) points[idx].x = clamp(pxToCurveX(px), minX, maxX);
   invalidateCurveLUT(clip.curves);
   drawCurvesEditor(clip);
-  scheduleInteractivePreview();
+  // No preview re-render while actively dragging a curve point — see mousedown above.
 });
 window.addEventListener('mouseup', ()=>{
   if (!curveDrag) return;
   curveDrag = null;
   pushHistory();
   renderTimeline();
-  renderFrame(state.playhead);
+  renderFrame(state.playhead); // one full-quality render now that the drag has stopped
 });
 $('#btnCurvesResetChannel').addEventListener('click', ()=>{
   const found = findClip(state.selectedClipId);
@@ -3635,7 +3692,6 @@ function hslToRgb(h,s,l){
 // (avoids doing two full pixel readbacks on the same rect when both are active).
 let interactivePreviewRAF = 0;
 let interactivePreviewPending = false;
-let interactivePreviewActive = false;
 function scheduleInteractivePreview(){
   interactivePreviewPending = true;
   if (interactivePreviewRAF) return;
@@ -3643,26 +3699,29 @@ function scheduleInteractivePreview(){
     interactivePreviewRAF = 0;
     if (!interactivePreviewPending) return;
     interactivePreviewPending = false;
-    interactivePreviewActive = true;
-    try { renderFrame(state.playhead); } finally { interactivePreviewActive = false; }
+    renderFrame(state.playhead);
   });
 }
 
-const hslPreviewCache = new Map();
-let hslPreviewCacheKey = '';
+const hslPreviewCache = new WeakMap(); // hsl object -> quantized RGB lookup Map (own cache per clip's
+                                        // HSL settings, so a video clip and an overlapping PIP with
+                                        // different Hue/Sat/Light values never evict each other's work)
+function invalidateHSLPreviewCache(hsl){ hslPreviewCache.delete(hsl); }
 function hslPreviewRGB(r,g,b,hsl){
-  const key = `${hsl.h}|${hsl.s}|${hsl.l}`;
-  if (key !== hslPreviewCacheKey){ hslPreviewCache.clear(); hslPreviewCacheKey=key; }
-  // Quantize only the interactive preview lookup. Final/export rendering keeps exact pixels.
+  let cache = hslPreviewCache.get(hsl);
+  if (!cache){ cache = new Map(); hslPreviewCache.set(hsl, cache); }
+  // Quantize to 5 bits/channel (32 steps) for the lookup key — visually indistinguishable during
+  // playback/export, but turns an expensive RGB->HSL->RGB conversion (trig + branching) into a
+  // cheap Map lookup after the first hit for each bucket.
   const rq=r>>3, gq=g>>3, bq=b>>3;
   const ck=(rq<<10)|(gq<<5)|bq;
-  let out=hslPreviewCache.get(ck);
+  let out=cache.get(ck);
   if (!out){
     const rr=rq*8+4, gg=gq*8+4, bb=bq*8+4;
     const [h0,s0,l0]=rgbToHsl(rr,gg,bb);
     out=hslToRgb(h0+hsl.h,clamp(s0+hsl.s,0,100),clamp(l0+hsl.l,0,100));
-    if(hslPreviewCache.size>32768) hslPreviewCache.clear();
-    hslPreviewCache.set(ck,out);
+    if(cache.size>32768) cache.clear();
+    cache.set(ck,out);
   }
   return out;
 }
@@ -3683,12 +3742,7 @@ function applyColorFxToRect(curves, hsl, x, y, w, h){
     let r=d[i], g=d[i+1], b=d[i+2];
     if (lut){ r=lut.r[r]; g=lut.g[g]; b=lut.b[b]; }
     if (hasHSL){
-      if (interactivePreviewActive) {
-        [r,g,b] = hslPreviewRGB(r,g,b,hsl);
-      } else {
-        const [h0,s0,l0] = rgbToHsl(r, g, b);
-        [r,g,b] = hslToRgb(h0 + hsl.h, clamp(s0 + hsl.s, 0, 100), clamp(l0 + hsl.l, 0, 100));
-      }
+      [r,g,b] = hslPreviewRGB(r,g,b,hsl);
     }
     d[i]=r; d[i+1]=g; d[i+2]=b;
   }
@@ -3720,6 +3774,7 @@ function setHSLFromAngle(clip, cfg, angleDeg){
     const clamped = clamp(angleDeg, -HSL_SWEEP_DEG, HSL_SWEEP_DEG);
     hsl[cfg.ch] = Math.round((clamped/HSL_SWEEP_DEG)*cfg.max);
   }
+  invalidateHSLPreviewCache(hsl); // values changed in place — stale lookups would show the old color
 }
 function drawHSLWheel(cfg, value){
   const canvasEl = $('#'+cfg.id);
@@ -3774,7 +3829,9 @@ HSL_WHEELS.forEach(cfg=>{
     hslDrag = { clip: found.clip, cfg };
     setHSLFromAngle(found.clip, cfg, angleFromEvent(canvasEl, e));
     drawAllHSLWheels(found.clip);
-    scheduleInteractivePreview();
+    // Full preview render is deferred to mouseup (see below) — dragging only
+    // updates the small wheel readout, which is cheap. Keeps the drag itself
+    // buttery smooth instead of re-running the pixel pass every frame.
     e.preventDefault();
   });
   canvasEl.addEventListener('dblclick', ()=>{
@@ -3791,14 +3848,14 @@ window.addEventListener('mousemove', e=>{
   const canvasEl = $('#'+hslDrag.cfg.id);
   setHSLFromAngle(hslDrag.clip, hslDrag.cfg, angleFromEvent(canvasEl, e));
   drawAllHSLWheels(hslDrag.clip);
-  scheduleInteractivePreview();
+  // No preview re-render while actively dragging — see mousedown above.
 });
 window.addEventListener('mouseup', ()=>{
   if (!hslDrag) return;
   hslDrag = null;
   pushHistory();
   renderTimeline();
-  renderFrame(state.playhead);
+  renderFrame(state.playhead); // one full-quality render now that the drag has stopped
 });
 $('#btnHSLReset').addEventListener('click', ()=>{
   const found = findClip(state.selectedClipId);
@@ -4248,6 +4305,10 @@ function duplicateSelectedClip(){
     const test = Math.max(0, Math.min(TIMELINE_CAP-dur, candidate));
     if (allowsOverlappingLayers(trackType) || !overlapsAny(trackType, test, dur, null)){ start = test; break; }
   }
+  if (start == null && !allowsOverlappingLayers(trackType)){
+    const free = findFreeSlot(trackType, src.start + dur, dur, null);
+    if (free != null) start = Math.round(free*1000)/1000;
+  }
   if (start == null){ showToast('No free space to duplicate the clip.', 'error'); return; }
   pushHistory();
   const clip = { ...JSON.parse(JSON.stringify(src)), id: uid(), start: Math.round(start*1000)/1000 };
@@ -4265,16 +4326,23 @@ function pasteClipAt(trackType, time){
   }
   const src = state.clipboard.clip;
   const dur = (src.outPoint-src.inPoint)/src.speed;
-  const start = Math.max(0, Math.round(time*1000)/1000);
-  if (overlapsAny(trackType, start, dur, null)){
-    showToast('Not enough free space to paste there.', 'error');
-    return;
+  let start = Math.max(0, Math.round(time*1000)/1000);
+  let bumped = false;
+  if (!allowsOverlappingLayers(trackType) && overlapsAny(trackType, start, dur, null)){
+    const free = findFreeSlot(trackType, start, dur, null);
+    if (free == null){
+      showToast('Not enough free space to paste there.', 'error');
+      return;
+    }
+    start = Math.round(free*1000)/1000;
+    bumped = true;
   }
   pushHistory();
   const clip = { ...JSON.parse(JSON.stringify(src)), id: uid(), start };
   state.tracks[trackType].push(clip);
   renderTimeline();
   selectClip(clip.id);
+  if (bumped) showToast('That spot was taken — pasted into the next open space.', 'success');
 }
 function pasteAtPlayhead(){
   if (!state.clipboard){ showToast('Clipboard is empty — copy a clip first.', 'error'); return; }
@@ -4560,6 +4628,30 @@ async function openProjectFromDisk(){
 }
 $('#btnSaveProject').addEventListener('click', saveProjectToDisk);
 $('#btnOpenProject').addEventListener('click', openProjectFromDisk);
+
+/* ===================== NEW PROJECT ===================== */
+function newProject(){
+  const hasContent = state.media.length>0 || state.tracks.video.length>0 ||
+    state.tracks.audio.length>0 || state.tracks.text.length>0 || state.tracks.pip.length>0;
+  if (hasContent){
+    const ok = confirm('Start a new project? This clears the current timeline and media pool. Anything not saved to a project file first will be lost.');
+    if (!ok) return;
+  }
+  pauseTimeline();
+  state.media.forEach(m=>{ try{ URL.revokeObjectURL(m.url); }catch(e){} });
+  state.media = [];
+  state.tracks = { video:[], audio:[], text:[], pip:[] };
+  state.selectedClipId = null; state.selectedClipIds = new Set();
+  state.playhead = 0; state.previewMode = 'timeline'; state.activeMediaId = null; state.assetPreviewId = null;
+  imgCache = {};
+  undoStack = []; redoStack = []; updateHistoryButtons();
+  previewLabel.classList.remove('show');
+  clearCanvas();
+  renderMediaList(); renderTimeline(); renderInspector(); renderFrame(0);
+  clearAutosaveData(); // so a page reload doesn't prompt to restore the project we just cleared
+  showToast('New project started.', 'success');
+}
+$('#btnNewProject').addEventListener('click', newProject);
 
 /* ===================== TRANSITION UI (toolbar button + popover) ===================== */
 const transitionPopoverEl = $('#transitionPopover');
@@ -5026,6 +5118,18 @@ async function deleteCachedMedia(mediaId){
     const tx=db.transaction(AUTOSAVE_MEDIA_STORE,'readwrite');
     tx.objectStore(AUTOSAVE_MEDIA_STORE).delete(mediaId);
   }catch(e){}
+  finally{ if(db)db.close(); }
+}
+
+async function clearAutosaveData(){
+  let db=null;
+  try{
+    db=await openAutosaveDB();
+    const tx=db.transaction([AUTOSAVE_META_STORE, AUTOSAVE_MEDIA_STORE],'readwrite');
+    tx.objectStore(AUTOSAVE_META_STORE).delete('latest');
+    tx.objectStore(AUTOSAVE_MEDIA_STORE).clear();
+    await new Promise((resolve,reject)=>{tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);});
+  }catch(e){ console.warn('ClipFlex could not clear autosave data:',e); }
   finally{ if(db)db.close(); }
 }
 
