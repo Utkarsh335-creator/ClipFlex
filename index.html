@@ -1295,24 +1295,12 @@ function totalDuration(){
   return Math.max(end, 0.001);
 }
 function rangesOverlap(aStart,aEnd,bStart,bEnd){ return aStart < bEnd - 1e-6 && bStart < aEnd - 1e-6; }
+// Multi-lane vertical stacking (dragging a pip/text/audio clip above/below
+// another one in the same track) has been removed entirely — it kept
+// producing edge-case bugs (shrink-blocking, one-directional stacking).
+// Every track now behaves like the video track always did: one lane, clips
+// simply can't overlap in time on the same track.
 function allowsOverlappingLayers(trackType){
-  return trackType==='audio' || trackType==='text' || trackType==='pip';
-}
-
-function manualLaneOf(clip){
-  return Number.isFinite(clip && clip._timelineLane)
-    ? Math.max(0, Math.floor(clip._timelineLane))
-    : 0;
-}
-function overlapsAnyInManualLane(trackType,start,duration,excludeIds=null,lane=0){
-  const end=start+duration;
-  const excluded=excludeIds||new Set();
-  for(const c of state.tracks[trackType]){
-    if(excluded.has(c.id)) continue;
-    if(allowsOverlappingLayers(trackType) && manualLaneOf(c)!==lane) continue;
-    const cStart=c.start, cEnd=c.start+clipDuration(c);
-    if(start<cEnd-1e-6 && end>cStart+1e-6) return true;
-  }
   return false;
 }
 
@@ -1644,7 +1632,6 @@ function addClip(trackType, media, start){
   pushHistory();
   const clip = { id: uid(), mediaId: media.id, type: media.type, start, inPoint, outPoint, speed:1, volume:100, fadeIn:0, fadeOut:0, opacity:100, blur:0, crop:{x:0,y:0,w:1,h:1} };
   if (trackType==='pip'){ clip.pipBox = {x:0.62,y:0.62,w:0.28,h:0.28}; }
-  clip._timelineLane = 0;
   state.tracks[trackType].push(clip);
   renderTimeline();
   selectClip(clip.id);
@@ -1661,8 +1648,7 @@ function addTextClip(){
   pushHistory();
   const clip = {
     id: uid(), mediaId: null, type:'text', start, inPoint:0, outPoint, speed:1, volume:100,
-    content:'Your text here', font:"Arial, sans-serif", color:'#ffffff', size:48, position:{x:0.5,y:0.5},
-    _timelineLane:0
+    content:'Your text here', font:"Arial, sans-serif", color:'#ffffff', size:48, position:{x:0.5,y:0.5}
   };
   state.tracks.text.push(clip);
   renderTimeline();
@@ -2652,38 +2638,24 @@ function renderTimeline(){
   renderLane(lanePip, 'pip');
   updateTransportUI(state.playhead);
 }
+// Exposed on window so the track-resize-handle script (a separate <script>
+// block further down the page, in its own IIFE) can actually call this to
+// reflow clip content live while/after a track row is being resized.
+// Without this, that script's `typeof renderTimeline === 'function'` check
+// always failed (renderTimeline was only a local var in this script's own
+// closure), so dragging a row's height never repositioned the clips inside it.
+window.renderTimeline = renderTimeline;
 
 function renderLane(laneEl, trackType){
   laneEl.innerHTML = '';
   const clips = [...state.tracks[trackType]].sort((a,b)=>a.start-b.start || a.id.localeCompare(b.id));
-  const multiLayer = allowsOverlappingLayers(trackType);
 
-  // Manual sub-lanes: the editor NEVER changes a clip's vertical lane
-  // because of overlap or horizontal movement. A lane only changes through an
-  // explicit user action.
-  const clipLane = new Map();
-  clips.forEach(clip=>{
-    const lane = Number.isFinite(clip._timelineLane)
-      ? Math.max(0, Math.floor(clip._timelineLane))
-      : 0;
-    clip._timelineLane = lane;
-    clipLane.set(clip.id, lane);
-  });
-
-  const laneCount = Math.max(
-    1,
-    ...clips.map(clip => (clipLane.get(clip.id) || 0) + 1)
-  );
   const rowEl = laneEl.parentElement;
   if (rowEl){
     const type = rowEl.dataset.trackType;
-    const requiredHeight = (type==='video')
-      ? Math.max(126, 26 + laneCount*50)
-      : Math.max(46, 26 + laneCount*50);
+    const requiredHeight = (type==='video') ? 126 : 76;
 
     // Rendering must never overwrite the user's chosen row height.
-    // Store the minimum needed for the current number of manual sub-lanes;
-    // the resize controller decides the actual visible height.
     rowEl.dataset.requiredHeight = String(requiredHeight);
 
     const userHeight = Number(rowEl.dataset.userHeight);
@@ -2706,12 +2678,7 @@ function renderLane(laneEl, trackType){
     el.style.left = (clip.start*state.pxPerSec)+'px';
     const rowNow=laneEl.parentElement;
     const rowH=rowNow ? rowNow.getBoundingClientRect().height : 76;
-    const lane=(clipLane.get(clip.id)||0);
-    const laneCountNow=Math.max(1,...clips.map(c=>(clipLane.get(c.id)||0)+1));
-    const usableTop=24;
-    const usableH=Math.max(14,rowH-usableTop-8);
-    const laneStep=laneCountNow>1 ? usableH/laneCountNow : 0;
-    el.style.top=(laneCountNow>1 ? usableTop+lane*laneStep : Math.max(20,(rowH-42)/2))+'px';
+    el.style.top=Math.max(20,(rowH-42)/2)+'px';
     el.style.width = Math.max(10, clipDuration(clip)*state.pxPerSec)+'px';
     el.dataset.clipId = clip.id;
     el.dataset.track = trackType;
@@ -2747,11 +2714,7 @@ function renderLane(laneEl, trackType){
         mark.style.left=((clip.start+k.t)*state.pxPerSec)+'px';
         const kr=laneEl.parentElement;
         const kh=kr ? kr.getBoundingClientRect().height : 76;
-        const kl=(clipLane.get(clip.id)||0);
-        const kc=Math.max(1,...clips.map(c=>(clipLane.get(c.id)||0)+1));
-        const ku=Math.max(14,kh-32);
-        const ks=kc>1 ? ku/kc : 0;
-        mark.style.top=(kc>1 ? 26+kl*ks : Math.max(22,(kh-40)/2))+'px';
+        mark.style.top=Math.max(22,(kh-40)/2)+'px';
         mark.title=`Keyframe · ${KEYFRAME_PROPS[prop]} · ${fmtTime(k.t)}`;
         laneEl.appendChild(mark);
       });
@@ -2768,11 +2731,7 @@ function renderLane(laneEl, trackType){
       badge.style.left = (boundary*state.pxPerSec)+'px';
       const tr=laneEl.parentElement;
       const th=tr ? tr.getBoundingClientRect().height : 76;
-      const tl=(clipLane.get(clip.id)||0);
-      const tc=Math.max(1,...clips.map(c=>(clipLane.get(c.id)||0)+1));
-      const tu=Math.max(14,th-32);
-      const ts=tc>1 ? tu/tc : 0;
-      badge.style.top=(tc>1 ? 26+tl*ts+6 : Math.max(22,(th-34)/2))+'px';
+      badge.style.top=Math.max(22,(th-34)/2)+'px';
       badge.title = `${TRANSITION_LABELS[trans.type]||trans.type} · ${trans.duration.toFixed(2)}s — click to edit`;
       badge.innerHTML = transitionIconSvg('crossfade');
       badge.addEventListener('click', e=>{
@@ -2792,10 +2751,9 @@ function showSnapGuide(time){
 }
 function hideSnapGuide(){ snapGuideEl.style.display='none'; }
 
-/* ---- move clip via drag ---- */
+/* ---- move clip via drag (horizontal only — clips can't be stacked vertically) ---- */
 function attachClipDrag(el, clip, trackType){
-  let dragging=false, startX=0, startY=0, moved=false, group=[];
-  let originalLane=0, pendingLane=0;
+  let dragging=false, startX=0, moved=false, group=[];
 
   el.addEventListener('mousedown', e=>{
     if (e.button!==0) return;
@@ -2805,12 +2763,6 @@ function attachClipDrag(el, clip, trackType){
     dragging=true;
     moved=false;
     startX=e.clientX;
-    startY=e.clientY;
-
-    originalLane = Number.isFinite(clip._timelineLane)
-      ? Math.max(0, Math.floor(clip._timelineLane))
-      : 0;
-    pendingLane = originalLane;
 
     const isGroup = state.selectedClipIds.has(clip.id) && state.selectedClipIds.size>1;
     if (!isGroup) selectClip(clip.id);
@@ -2827,7 +2779,6 @@ function attachClipDrag(el, clip, trackType){
         clip:found.clip,
         track:found.track,
         origStart:found.clip.start,
-        origLane:Number.isFinite(found.clip._timelineLane) ? found.clip._timelineLane : 0,
         el:document.querySelector(`.clip[data-clip-id="${id}"]`)
       };
     }).filter(Boolean);
@@ -2839,11 +2790,9 @@ function attachClipDrag(el, clip, trackType){
       if (!dragging) return;
 
       const dx=ev.clientX-startX;
-      const dy=ev.clientY-startY;
 
-      if (Math.abs(dx)>3 || Math.abs(dy)>3) moved=true;
+      if (Math.abs(dx)>3) moved=true;
 
-      // Horizontal position always follows the mouse horizontally.
       const rawStart=clamp(
         anchorEntry.origStart + dx/state.pxPerSec,
         0,
@@ -2852,25 +2801,12 @@ function attachClipDrag(el, clip, trackType){
       const snappedAnchor=snapStart(rawStart,anchorDur,clip.id);
       const delta=snappedAnchor-anchorEntry.origStart;
 
-      // Vertical movement is entirely manual. The user decides the lane
-      // by dragging up/down; no overlap test or time change can alter it.
-      if (allowsOverlappingLayers(trackType)){
-        pendingLane=Math.max(
-          0,
-          Math.round(originalLane + dy/50)
-        );
-      }else{
-        pendingLane=0;
-      }
-
       group.forEach(g=>{
         const ns=Math.max(0,g.origStart+delta);
         g.pendingStart=ns;
-        g.pendingLane=(g.clip.id===clip.id) ? pendingLane : g.origLane;
 
         if (g.el){
           g.el.style.left=(ns*state.pxPerSec)+'px';
-          g.el.style.top=(26+g.pendingLane*50)+'px';
         }
       });
 
@@ -2889,14 +2825,9 @@ function attachClipDrag(el, clip, trackType){
         const groupIdSet=new Set(group.map(g=>g.clip.id));
         let conflict=false;
 
-        // Keep the existing horizontal overlap validation.
         for(const g of group){
           const ns=Math.round(g.pendingStart*1000)/1000;
-          const lane=Number.isFinite(g.pendingLane) ? Math.max(0,Math.floor(g.pendingLane)) : manualLaneOf(g.clip);
-          const hasConflict=allowsOverlappingLayers(g.track)
-            ? overlapsAnyInManualLane(g.track,ns,clipDuration(g.clip),groupIdSet,lane)
-            : overlapsAny(g.track,ns,clipDuration(g.clip),groupIdSet);
-          if(hasConflict){ conflict=true; break; }
+          if(overlapsAny(g.track,ns,clipDuration(g.clip),groupIdSet)){ conflict=true; break; }
         }
 
         if(conflict){
@@ -2906,12 +2837,6 @@ function attachClipDrag(el, clip, trackType){
           pushHistory();
           group.forEach(g=>{
             g.clip.start=Math.round(g.pendingStart*1000)/1000;
-            if(g.clip.id===clip.id && allowsOverlappingLayers(g.track)){
-              g.clip._timelineLane=Math.max(
-                0,
-                Math.floor(g.pendingLane)
-              );
-            }
           });
           renderTimeline();
         }
@@ -5333,10 +5258,9 @@ init();
     const row = ROWS[type];
     if (!row) return;
 
-    const min = Math.max(
-      MINIMUMS[type] || 46,
-      Number(row.dataset.requiredHeight) || 0
-    );
+    // Only the true structural minimum floors the drag — NOT requiredHeight
+    // (a per-track default). Content should never block a deliberate resize.
+    const min = MINIMUMS[type] || 46;
     const value = Math.max(min, Math.round(px));
 
     row.dataset.userHeight = String(value);
