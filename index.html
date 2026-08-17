@@ -4780,141 +4780,320 @@ $('#guideClose').addEventListener('click', ()=> guideOverlay.classList.remove('s
 guideOverlay.addEventListener('click', e=>{ if (e.target===guideOverlay) guideOverlay.classList.remove('show'); });
 document.addEventListener('keydown', e=>{ if (e.key==='Escape' && guideOverlay.classList.contains('show')) guideOverlay.classList.remove('show'); });
 
-/* ===================== WEBM DURATION FIX =====================
-   Why the exported video's seek bar is locked:
+/* ===================== WEBM SEEK FIX (duration + Cues) =====================
+   Why the exported video's seek bar was locked:
    MediaRecorder writes WebM without ever going back to fill in a real
    Duration value in the file header (it isn't known until recording
-   stops, and the data is streamed out as it's produced). Every player
-   treats a WebM/Matroska file with no valid Duration as non-seekable,
-   which is exactly the "can't drag the blue line" behavior. This does
-   a minimal, surgical EBML patch after recording completes: it walks
-   into Segment > Info and writes (or fixes) the Duration element using
-   the actual elapsed recording time, so the exported file is properly
-   seekable in any player. Only the few elements we need to touch are
-   parsed; everything else (including all the actual video/audio frame
-   data in Clusters) is copied through untouched as raw bytes. */
+   stops, and the data is streamed out as it's produced). On top of that,
+   MediaRecorder never writes a Cues element (the seek index Matroska/WebM
+   players use to jump to an arbitrary time) — it only exists in files
+   built by an offline muxer. No Duration *and* no Cues is exactly the
+   "can't drag the blue line, can only pause" behavior.
+
+   Fixing only the Duration (an earlier version of this patch) isn't
+   enough: the player then knows how long the file is, but still has no
+   index telling it *where in the file* a given timestamp lives, so
+   dragging the scrub bar does nothing.
+
+   This patch does two things after recording completes, via a surgical
+   EBML edit (no re-encoding, and the original Cluster bytes are copied
+   through untouched):
+     1. Walks into Segment > Info and writes/fixes the Duration element.
+     2. Walks every Cluster, finds the ones that contain an actual video
+        keyframe, and builds a Cues (seek index) element pointing at
+        them — inserted into the file right before the first Cluster.
+
+   Cue-per-cluster is NOT enough on its own: MediaRecorder's clusters are
+   emitted roughly once a second, but VP8/VP9 keyframes are much sparser
+   (every few seconds, whenever the encoder decides). Most cluster
+   boundaries land mid-GOP, with no keyframe to decode from — seeking
+   there produces corrupted frames until the decoder happens to reach a
+   real keyframe. So each Cluster's SimpleBlocks are inspected for the
+   video track's keyframe flag, and only clusters that actually start a
+   keyframe get a cue.
+
+   IMPORTANT: MediaRecorder writes every Cluster using EBML's "unknown
+   size" marker (a reserved all-1-bits length code), because it doesn't
+   know how big a cluster will be until it's done streaming it — this is
+   completely normal and how every browser plays these files natively.
+   Clusters (and their internal SimpleBlocks, which DO have normal finite
+   sizes) are walked element-by-element rather than scanned for byte
+   patterns, so a Cluster's end is always found by landing exactly on the
+   next real element boundary — never by guessing inside raw frame data. */
+function readEbmlId(bytes, pos){
+  const first = bytes[pos];
+  let mask = 0x80, len = 1;
+  while (!(first & mask) && len <= 4){ mask >>= 1; len++; }
+  let id = 0;
+  for (let i=0;i<len;i++) id = id*256 + bytes[pos+i];
+  return { id, len };
+}
+function readEbmlSize(bytes, pos){
+  const first = bytes[pos];
+  let mask = 0x80, len = 1;
+  while (!(first & mask) && len <= 8){ mask >>= 1; len++; }
+  const data0 = first & (mask - 1);
+  let allOnes = (data0 === (mask - 1));
+  let value = data0;
+  for (let i=1;i<len;i++){
+    const b = bytes[pos+i];
+    value = value*256 + b;
+    if (b !== 0xFF) allOnes = false;
+  }
+  return { value, len, unknown: allOnes };
+}
+function writeEbmlVint(value, minLen){
+  let len = minLen || 1;
+  while (value > Math.pow(2, 7*len) - 2 && len < 8) len++;
+  const out = new Uint8Array(len);
+  let v = value;
+  for (let i=len-1;i>=1;i--){ out[i] = v % 256; v = Math.floor(v/256); }
+  out[0] = v | (0x80 >> (len-1));
+  return out;
+}
+function concatEbmlBytes(arrays){
+  let total = 0;
+  for (const a of arrays) total += a.length;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrays){ out.set(a, off); off += a.length; }
+  return out;
+}
+function readEbmlUint(bytes, start, end){
+  let value = 0;
+  for (let i=start;i<end;i++) value = value*256 + bytes[i];
+  return value;
+}
+const EBML_ID = 0x1A45DFA3, SEGMENT_ID = 0x18538067, INFO_ID = 0x1549A966,
+  TRACKS_ID = 0x1654AE6B, TRACKENTRY_ID = 0xAE, TRACKNUMBER_ID = 0xD7, TRACKTYPE_ID = 0x83,
+  CLUSTER_ID = 0x1F43B675, TIMECODE_ID = 0xE7, SIMPLEBLOCK_ID = 0xA3,
+  BLOCKGROUP_ID = 0xA0, BLOCK_ID = 0xA1, REFBLOCK_ID = 0xFB,
+  DURATION_ID = 0x4489, TIMECODESCALE_ID = 0x2AD7B1,
+  CUES_ID = 0x1C53BB6B, TAGS_ID = 0x1254C367, CHAPTERS_ID = 0x1043A770;
+// Any top-level id that can legitimately follow a streamed (unknown-size)
+// Cluster — used to recognize where that Cluster's data ends.
+const SEGMENT_SIBLING_IDS = new Set([CLUSTER_ID, CUES_ID, TAGS_ID, CHAPTERS_ID]);
+
+// Scans a Tracks element's children for the video TrackEntry and returns its
+// TrackNumber (falls back to 1, MediaRecorder's usual video track number).
+function findVideoTrackNumber(bytes, tracksContentStart, tracksContentEnd){
+  let pos = tracksContentStart, trackNum = 1;
+  while (pos < tracksContentEnd){
+    const eid = readEbmlId(bytes, pos);
+    const esize = readEbmlSize(bytes, pos + eid.len);
+    const cStart = pos + eid.len + esize.len;
+    const cEnd = esize.unknown ? tracksContentEnd : cStart + esize.value;
+    if (eid.id === TRACKENTRY_ID){
+      let tp = cStart, num = null, type = null;
+      while (tp < cEnd){
+        const fid = readEbmlId(bytes, tp);
+        const fsize = readEbmlSize(bytes, tp + fid.len);
+        const fStart = tp + fid.len + fsize.len;
+        const fEnd = fsize.unknown ? cEnd : fStart + fsize.value;
+        if (fid.id === TRACKNUMBER_ID) num = readEbmlUint(bytes, fStart, fEnd);
+        else if (fid.id === TRACKTYPE_ID) type = readEbmlUint(bytes, fStart, fEnd);
+        tp = fEnd;
+      }
+      if (type === 1 && num != null) { trackNum = num; break; } // TrackType 1 = video
+    }
+    pos = cEnd;
+  }
+  return trackNum;
+}
+// Reads a SimpleBlock/Block's leading Track Number vint + signed int16
+// timecode (relative to its Cluster) + flags byte.
+function readBlockHeader(bytes, pos, end){
+  const trackVint = readEbmlSize(bytes, pos); // block track numbers reuse the size vint encoding
+  const p = pos + trackVint.len;
+  if (p + 3 > end) return null;
+  let rel = (bytes[p] << 8) | bytes[p+1];
+  if (rel >= 0x8000) rel -= 0x10000; // signed 16-bit
+  return { track: trackVint.value, relTimecode: rel, flags: bytes[p+2] };
+}
+
+// Walks Segment's direct children. Locates Info (for the Duration patch)
+// and Tracks (to resolve the video track number), and — knowing that
+// number — inspects every Cluster for a video keyframe, recording one cue
+// per Cluster that actually starts with one. Unknown-size Clusters are
+// walked child-by-child (never scanned for byte patterns), so their end is
+// always found by landing exactly on the next real element boundary.
+function analyzeSegment(bytes, segContentStart, segContentEnd, videoTrackNumber){
+  let pos = segContentStart;
+  let infoStart = -1, infoEnd = -1;
+  let tracksContentStart = -1, tracksContentEnd = -1;
+  let firstClusterStart = -1;
+  const cues = [];
+  while (pos < segContentEnd){
+    const cid = readEbmlId(bytes, pos);
+    const csize = readEbmlSize(bytes, pos + cid.len);
+    const contentStart = pos + cid.len + csize.len;
+
+    if (cid.id === CLUSTER_ID){
+      if (firstClusterStart === -1) firstClusterStart = pos;
+      const clusterStart = pos;
+      const hardEnd = csize.unknown ? segContentEnd : contentStart + csize.value;
+      let cpos = contentStart, clusterEnd = hardEnd, clusterTime = 0, keyframeTime = -1;
+      while (true){
+        if (cpos >= hardEnd || cpos >= bytes.length){ clusterEnd = cpos; break; }
+        const fid = readEbmlId(bytes, cpos);
+        if (csize.unknown && SEGMENT_SIBLING_IDS.has(fid.id)){ clusterEnd = cpos; break; }
+        const fsize = readEbmlSize(bytes, cpos + fid.len);
+        const fContentStart = cpos + fid.len + fsize.len;
+        if (fsize.unknown){ clusterEnd = cpos; break; } // shouldn't happen for cluster children; stop safely
+        const fContentEnd = fContentStart + fsize.value;
+        if (fid.id === TIMECODE_ID){
+          clusterTime = readEbmlUint(bytes, fContentStart, fContentEnd);
+        } else if (fid.id === SIMPLEBLOCK_ID && keyframeTime === -1){
+          const hdr = readBlockHeader(bytes, fContentStart, fContentEnd);
+          if (hdr && hdr.track === videoTrackNumber && (hdr.flags & 0x80)) // 0x80 = keyframe flag
+            keyframeTime = clusterTime + hdr.relTimecode;
+        } else if (fid.id === BLOCKGROUP_ID && keyframeTime === -1){
+          // BlockGroup's Block is implicitly a keyframe only if it has no
+          // ReferenceBlock child. MediaRecorder doesn't emit these, but
+          // it's handled rather than risk mis-tagging a P-frame as a cue.
+          let bp = fContentStart, blockTrack = null, blockRel = null, hasRef = false;
+          while (bp < fContentEnd){
+            const bid = readEbmlId(bytes, bp);
+            const bsize = readEbmlSize(bytes, bp + bid.len);
+            const bcs = bp + bid.len + bsize.len;
+            if (bsize.unknown) break;
+            const bce = bcs + bsize.value;
+            if (bid.id === BLOCK_ID){ const h = readBlockHeader(bytes, bcs, bce); if (h){ blockTrack = h.track; blockRel = h.relTimecode; } }
+            else if (bid.id === REFBLOCK_ID) hasRef = true;
+            bp = bce;
+          }
+          if (!hasRef && blockTrack === videoTrackNumber && blockRel !== null) keyframeTime = clusterTime + blockRel;
+        }
+        cpos = fContentEnd;
+      }
+      if (keyframeTime !== -1) cues.push({ time: keyframeTime, clusterStart });
+      pos = clusterEnd;
+      continue;
+    }
+
+    if (csize.unknown) break; // unexpected unknown-size non-Cluster element; stop analysis safely
+    const contentEnd = contentStart + csize.value;
+    if (cid.id === INFO_ID){ infoStart = pos; infoEnd = contentEnd; }
+    else if (cid.id === TRACKS_ID){ tracksContentStart = contentStart; tracksContentEnd = contentEnd; }
+    pos = contentEnd;
+  }
+  return { infoStart, infoEnd, tracksContentStart, tracksContentEnd, firstClusterStart, cues };
+}
+function uintElem(idByte, value, width){
+  const b = new Uint8Array(width);
+  let v = value;
+  for (let i = width - 1; i >= 0; i--){ b[i] = v % 256; v = Math.floor(v / 256); }
+  return concatEbmlBytes([ new Uint8Array([idByte]), writeEbmlVint(width, 1), b ]);
+}
+// Builds a Cues element. Every integer field uses a fixed byte width
+// regardless of its value, so the element's total length depends only on
+// the cue *count* — letting callers compute where the Clusters will land
+// (and so what clusterPos to write) without a chicken-and-egg problem.
+function buildCuesElement(cues, trackNumber){
+  const CUE_TIME_WIDTH = 4, CUE_TRACK_WIDTH = 1, CUE_POS_WIDTH = 5; // pos: up to ~1TB
+  const cuePoints = cues.map(c=>{
+    const cueTime = uintElem(0xB3, c.time, CUE_TIME_WIDTH);
+    const trackPosContent = concatEbmlBytes([ uintElem(0xF7, trackNumber, CUE_TRACK_WIDTH), uintElem(0xF1, c.clusterPos, CUE_POS_WIDTH) ]);
+    const trackPos = concatEbmlBytes([ new Uint8Array([0xB7]), writeEbmlVint(trackPosContent.length, 1), trackPosContent ]);
+    const cuePointContent = concatEbmlBytes([ cueTime, trackPos ]);
+    return concatEbmlBytes([ new Uint8Array([0xBB]), writeEbmlVint(cuePointContent.length, 1), cuePointContent ]);
+  });
+  const cuesContent = concatEbmlBytes(cuePoints);
+  return concatEbmlBytes([ new Uint8Array([0x1C,0x53,0xBB,0x6B]), writeEbmlVint(cuesContent.length, 1), cuesContent ]);
+}
+// Patches Segment > Info's Duration and inserts a Cues (seek index) element
+// right before the first Cluster. Returns a new Uint8Array, or null if the
+// file isn't recognizable EBML/WebM (patch skipped, unpatched blob exported).
+function patchWebmDuration(bytes, durationMs){
+  const ebmlId = readEbmlId(bytes, 0);
+  if (ebmlId.id !== EBML_ID) return null;
+  const ebmlSize = readEbmlSize(bytes, ebmlId.len);
+  const headerEnd = ebmlId.len + ebmlSize.len + (ebmlSize.unknown ? 0 : ebmlSize.value);
+
+  const segId = readEbmlId(bytes, headerEnd);
+  if (segId.id !== SEGMENT_ID) return null;
+  const segSize = readEbmlSize(bytes, headerEnd + segId.len);
+  const segContentStart = headerEnd + segId.len + segSize.len;
+  const segContentEnd = segSize.unknown ? bytes.length : segContentStart + segSize.value;
+
+  // Pass 1 (dummy track number) just to locate Tracks so the real video
+  // track number can be resolved; pass 2 uses it to build accurate,
+  // keyframe-aware cues.
+  const pre = analyzeSegment(bytes, segContentStart, segContentEnd, -1);
+  if (pre.infoStart === -1) return null; // couldn't find Info — export unpatched
+  const videoTrackNumber = pre.tracksContentStart !== -1 ? findVideoTrackNumber(bytes, pre.tracksContentStart, pre.tracksContentEnd) : 1;
+  const info = analyzeSegment(bytes, segContentStart, segContentEnd, videoTrackNumber);
+
+  // Patch Duration inside Info (find existing Duration + TimecodeScale, if any).
+  const infoIdRead = readEbmlId(bytes, info.infoStart);
+  const infoSizeRead = readEbmlSize(bytes, info.infoStart + infoIdRead.len);
+  const infoContentStart = info.infoStart + infoIdRead.len + infoSizeRead.len;
+  let ipos = infoContentStart, durStart = -1, durEnd = -1, timecodeScale = 1000000; // ns/tick, EBML default
+  while (ipos < info.infoEnd){
+    const fid = readEbmlId(bytes, ipos);
+    const fsize = readEbmlSize(bytes, ipos + fid.len);
+    const fContentStart = ipos + fid.len + fsize.len;
+    const fContentEnd = fsize.unknown ? info.infoEnd : fContentStart + fsize.value;
+    if (fid.id === DURATION_ID) { durStart = ipos; durEnd = fContentEnd; }
+    else if (fid.id === TIMECODESCALE_ID) { timecodeScale = readEbmlUint(bytes, fContentStart, fContentEnd) || 1000000; }
+    ipos = fContentEnd;
+  }
+  const durationTicks = (durationMs * 1e6) / timecodeScale; // ms -> ns -> ticks
+  const durView = new DataView(new ArrayBuffer(8));
+  durView.setFloat64(0, durationTicks);
+  const newDurElem = concatEbmlBytes([ new Uint8Array([0x44,0x89]), writeEbmlVint(8,1), new Uint8Array(durView.buffer) ]);
+  const newInfoContent = durStart !== -1
+    ? concatEbmlBytes([ bytes.subarray(infoContentStart, durStart), newDurElem, bytes.subarray(durEnd, info.infoEnd) ])
+    : concatEbmlBytes([ bytes.subarray(infoContentStart, info.infoEnd), newDurElem ]);
+  const newInfoElem = concatEbmlBytes([ new Uint8Array([0x15,0x49,0xA9,0x66]), writeEbmlVint(newInfoContent.length, 1), newInfoContent ]);
+
+  // Build the Cues element (if any keyframe-bearing clusters were found).
+  // Two-pass: measure the fixed-width element's length with dummy
+  // positions, use that to compute where Clusters will actually land once
+  // Info+Cues are inserted, then build it again with the real positions.
+  let newCuesElem = new Uint8Array(0);
+  if (info.cues.length > 0 && info.firstClusterStart !== -1 && info.infoEnd <= info.firstClusterStart){
+    const cuesElemLen = buildCuesElement(info.cues.map(c=>({ time: c.time, clusterPos: 0 })), videoTrackNumber).length;
+    const newFirstClusterOffset = (info.infoStart - segContentStart) + newInfoElem.length + (info.firstClusterStart - info.infoEnd) + cuesElemLen;
+    const realCues = info.cues.map(c => ({ time: c.time, clusterPos: newFirstClusterOffset + (c.clusterStart - info.firstClusterStart) }));
+    const built = buildCuesElement(realCues, videoTrackNumber);
+    if (built.length === cuesElemLen) newCuesElem = built; // sanity check; skip cues rather than risk a corrupt file
+  }
+
+  const pieces = [ bytes.subarray(segContentStart, info.infoStart), newInfoElem ];
+  if (newCuesElem.length > 0){
+    pieces.push(bytes.subarray(info.infoEnd, info.firstClusterStart), newCuesElem, bytes.subarray(info.firstClusterStart, segContentEnd));
+  } else {
+    pieces.push(bytes.subarray(info.infoEnd, segContentEnd));
+  }
+  const newSegContent = concatEbmlBytes(pieces);
+  const newSegSizeField = segSize.unknown
+    ? bytes.subarray(headerEnd + segId.len, segContentStart) // leave unknown-size Segment as-is
+    : writeEbmlVint(newSegContent.length, segSize.len);
+
+  return concatEbmlBytes([
+    bytes.subarray(0, headerEnd),
+    new Uint8Array([0x18,0x53,0x80,0x67]),
+    newSegSizeField,
+    newSegContent
+  ]);
+}
 function fixWebmDuration(blob, durationMs){
   return new Promise(resolve=>{
     try{
       const reader = new FileReader();
       reader.onloadend = ()=>{
         try{
-          const file = new WebmWriterFile(new Uint8Array(reader.result));
-          resolve(file.fixDuration(durationMs) ? file.toBlob(blob.type) : blob);
-        }catch(e){ console.warn('ClipFlex webm duration fix failed, exporting unpatched file:', e); resolve(blob); }
+          const bytes = new Uint8Array(reader.result);
+          const fixed = patchWebmDuration(bytes, durationMs);
+          resolve(fixed ? new Blob([fixed], { type: blob.type }) : blob);
+        }catch(e){ console.warn('ClipFlex webm seek fix failed, exporting unpatched file:', e); resolve(blob); }
       };
       reader.onerror = ()=> resolve(blob);
       reader.readAsArrayBuffer(blob);
     }catch(e){ resolve(blob); }
   });
 }
-// Minimal EBML container reader/writer — only the element types needed to
-// locate and correct Segment > Info > Duration (and TimecodeScale).
-const WEBM_SECTIONS = {
-  0x8538067: { name:'Segment', type:'Container' },
-  0x549a966: { name:'Info', type:'Container' },
-  0xad7b1:   { name:'TimecodeScale', type:'Uint' },
-  0x489:     { name:'Duration', type:'Float' }
-};
-function WebmBase(name,type){ this.name=name||'Unknown'; this.type=type||'Unknown'; }
-WebmBase.prototype.updateBySource=function(){};
-WebmBase.prototype.setSource=function(source){ this.source=source; this.updateBySource(); };
-WebmBase.prototype.updateByData=function(){};
-WebmBase.prototype.setData=function(data){ this.data=data; this.updateByData(); };
-function WebmUint(name,type){ WebmBase.call(this,name,type||'Uint'); }
-WebmUint.prototype=Object.create(WebmBase.prototype); WebmUint.prototype.constructor=WebmUint;
-function padHex(hex){ return hex.length%2===1?'0'+hex:hex; }
-WebmUint.prototype.updateBySource=function(){ this.data=''; for(let i=0;i<this.source.length;i++) this.data+=padHex(this.source[i].toString(16)); };
-WebmUint.prototype.updateByData=function(){ const length=this.data.length/2; this.source=new Uint8Array(length); for(let i=0;i<length;i++) this.source[i]=parseInt(this.data.substr(i*2,2),16); };
-WebmUint.prototype.getValue=function(){ return parseInt(this.data,16); };
-WebmUint.prototype.setValue=function(value){ this.setData(padHex(Math.round(value).toString(16))); };
-function WebmFloat(name,type){ WebmBase.call(this,name,type||'Float'); }
-WebmFloat.prototype=Object.create(WebmBase.prototype); WebmFloat.prototype.constructor=WebmFloat;
-WebmFloat.prototype.getFloatArrayType=function(){ return this.source && this.source.length===4 ? Float32Array : Float64Array; };
-WebmFloat.prototype.updateBySource=function(){ const byteArray=this.source.slice().reverse(); const FA=this.getFloatArrayType(); this.data=new FA(byteArray.buffer)[0]; };
-WebmFloat.prototype.updateByData=function(){ const FA=this.getFloatArrayType(); const floatArray=new FA([this.data]); this.source=new Uint8Array(floatArray.buffer).reverse(); };
-WebmFloat.prototype.getValue=function(){ return this.data; };
-WebmFloat.prototype.setValue=function(value){ this.setData(value); };
-function WebmContainer(name,type){ WebmBase.call(this,name,type||'Container'); }
-WebmContainer.prototype=Object.create(WebmBase.prototype); WebmContainer.prototype.constructor=WebmContainer;
-WebmContainer.prototype.readByte=function(){ return this.source[this.offset++]; };
-WebmContainer.prototype.readUint=function(){
-  const firstByte=this.readByte();
-  const bytes=8-firstByte.toString(2).length;
-  let value=firstByte-(1<<(7-bytes));
-  for(let i=0;i<bytes;i++){ value*=256; value+=this.readByte(); }
-  return value;
-};
-WebmContainer.prototype.updateBySource=function(){
-  this.data=[];
-  for(this.offset=0; this.offset<this.source.length; ){
-    const id=this.readUint();
-    const len=this.readUint();
-    const end=Math.min(this.offset+len, this.source.length);
-    const data=this.source.slice(this.offset,end);
-    const info=WEBM_SECTIONS[id]||{name:'Unknown',type:'Unknown'};
-    let Ctor=WebmBase;
-    if(info.type==='Container')Ctor=WebmContainer; else if(info.type==='Uint')Ctor=WebmUint; else if(info.type==='Float')Ctor=WebmFloat;
-    const section=new Ctor(info.name,info.type);
-    section.setSource(data);
-    this.data.push({ id, data:section });
-    this.offset=end;
-  }
-};
-WebmContainer.prototype.writeUint=function(x,draft){
-  let bytes=1, flag=0x80;
-  for(; x>=flag && bytes<8; bytes++, flag*=0x80){}
-  if(!draft){
-    let value=flag+x;
-    for(let i=bytes-1;i>=0;i--){ const c=value%256; this.source[this.offset+i]=c; value=(value-c)/256; }
-  }
-  this.offset+=bytes;
-};
-WebmContainer.prototype.writeSections=function(draft){
-  this.offset=0;
-  for(let i=0;i<this.data.length;i++){
-    const section=this.data[i], content=section.data.source, contentLength=content.length;
-    this.writeUint(section.id,draft);
-    this.writeUint(contentLength,draft);
-    if(!draft) this.source.set(content,this.offset);
-    this.offset+=contentLength;
-  }
-  return this.offset;
-};
-WebmContainer.prototype.updateByData=function(){
-  const length=this.writeSections('draft');
-  this.source=new Uint8Array(length);
-  this.writeSections();
-};
-WebmContainer.prototype.getSectionById=function(id){
-  for(let i=0;i<this.data.length;i++) if(this.data[i].id===id) return this.data[i].data;
-  return null;
-};
-function WebmWriterFile(source){ WebmContainer.call(this,'File','File'); this.setSource(source); }
-WebmWriterFile.prototype=Object.create(WebmContainer.prototype); WebmWriterFile.prototype.constructor=WebmWriterFile;
-WebmWriterFile.prototype.fixDuration=function(durationMs){
-  const segment=this.getSectionById(0x8538067);
-  if(!segment) return false;
-  const info=segment.getSectionById(0x549a966);
-  if(!info) return false;
-  const timeScaleSection=info.getSectionById(0xad7b1);
-  if(!timeScaleSection) return false;
-  let durationSection=info.getSectionById(0x489);
-  if(durationSection){
-    if(!(durationSection.getValue()>0)) durationSection.setValue(durationMs);
-    else return false; // already has a valid duration, nothing to fix
-  } else {
-    durationSection=new WebmFloat('Duration','Float');
-    durationSection.setValue(durationMs);
-    info.data.push({ id:0x489, data:durationSection });
-  }
-  timeScaleSection.setValue(1000000); // 1 tick = 1ms, so Duration is directly in ms
-  info.updateByData();
-  segment.updateByData();
-  this.updateByData();
-  return true;
-};
-WebmWriterFile.prototype.toBlob=function(mimeType){ return new Blob([this.source.buffer], { type: mimeType||'video/webm' }); };
 
 /* ===================== EXPORT ===================== */
 const modalOverlay = $('#modalOverlay');
