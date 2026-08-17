@@ -798,6 +798,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
         Save Project
       </button>
+      <button class="btn" id="btnCapture" title="Capture the current preview frame as a PNG image">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Capture
+      </button>
       <button class="btn amber" id="btnExport" title="Export video">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>
         Export Video
@@ -907,6 +911,14 @@
         <label>Blur</label>
         <input type="range" id="blurSlider" min="0" max="20" step="0.5" value="0">
         <span class="insp-val" id="blurVal">0px</span>
+      </div>
+      <div class="insp-field" id="fieldRotation" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+        <span class="insp-field"><label>Rotation</label><input type="range" id="rotationSlider" min="-180" max="180" step="1" value="0"><span class="insp-val" id="rotationVal">0°</span></span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn" id="btnRotateLeft" type="button" title="Rotate 90° left">⟲ 90°</button>
+          <button class="btn" id="btnRotateRight" type="button" title="Rotate 90° right">⟳ 90°</button>
+          <button class="btn danger-ghost" id="btnRotateReset" type="button" title="Reset rotation">Reset</button>
+        </span>
       </div>
       <div class="insp-field" id="fieldCurves" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
         <label>RGB Curves</label>
@@ -1677,7 +1689,7 @@ function addClip(trackType, media, start){
     bumped = true;
   }
   pushHistory();
-  const clip = { id: uid(), mediaId: media.id, type: media.type, start: placedStart, inPoint, outPoint, speed:1, volume:100, fadeIn:0, fadeOut:0, opacity:100, blur:0, crop:{x:0,y:0,w:1,h:1} };
+  const clip = { id: uid(), mediaId: media.id, type: media.type, start: placedStart, inPoint, outPoint, speed:1, volume:100, fadeIn:0, fadeOut:0, opacity:100, blur:0, rotation:0, crop:{x:0,y:0,w:1,h:1} };
   if (trackType==='pip'){ clip.pipBox = {x:0.62,y:0.62,w:0.28,h:0.28}; }
   state.tracks[trackType].push(clip);
   renderTimeline();
@@ -1923,6 +1935,12 @@ function drawContain(source, sw, sh, crop, fx){
     ctx.globalAlpha = clamp((fx.opacity ?? 100)/100, 0, 1);
     if (fx.blur) ctx.filter = `blur(${fx.blur}px)`;
   }
+  if (fx && fx.rotation){
+    const cx = dx+dw/2, cy = dy+dh/2;
+    ctx.translate(cx, cy);
+    ctx.rotate(fx.rotation*Math.PI/180);
+    ctx.translate(-cx, -cy);
+  }
   try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
   ctx.restore();
   if (fx) applyColorFxToRect(fx.curves, fx.hsl, dx, dy, dw, dh);
@@ -2021,6 +2039,12 @@ function drawPipOverlay(clip, sourceOverride=null){
   ctx.clip(); // keep any pan/zoom animation contained within the PIP box
   ctx.globalAlpha = clamp((kfv.opacity ?? clip.opacity ?? 100)/100, 0, 1);
   if (kfv.blur) ctx.filter = `blur(${kfv.blur}px)`;
+  if (clip.rotation){
+    const rcx = dx+dw/2, rcy = dy+dh/2;
+    ctx.translate(rcx, rcy);
+    ctx.rotate(clip.rotation*Math.PI/180);
+    ctx.translate(-rcx, -rcy);
+  }
   if (chromaIsActive(clip.chroma)){
     const keyed = chromaKeyedCanvas(source, sx, sy, sWidth, sHeight, dw, dh, clip.chroma);
     try{ if (keyed) ctx.drawImage(keyed, dx, dy, dw, dh); }catch(e){}
@@ -2251,6 +2275,12 @@ function paintFrame(frame, crop, alpha, fx, box, offsetX, offsetY, scaleMul){
   ctx.save();
   ctx.globalAlpha = clamp(alpha,0,1) * clamp((fx && fx.opacity!=null ? fx.opacity : 100)/100, 0, 1);
   if (fx && fx.blur) ctx.filter = `blur(${fx.blur}px)`;
+  if (fx && fx.rotation){
+    const cx = x+w/2, cy = y+h/2;
+    ctx.translate(cx, cy);
+    ctx.rotate(fx.rotation*Math.PI/180);
+    ctx.translate(-cx, -cy);
+  }
   try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, x, y, w, h); }catch(e){}
   ctx.restore();
   if (fx) applyColorFxToRect(fx.curves, fx.hsl, x, y, w, h);
@@ -2262,8 +2292,8 @@ function renderTransitionComposite(trans, time, elA, elB, box){
   const av=getAnimatedClipValues(a,time), bv=getAnimatedClipValues(b,time);
   const fa = sampleClipFrame(a, elA, time, clamp((av.volume??a.volume??100)/100,0,1) * audioFadeFactor(a, time) * (1-progress));
   const fb = sampleClipFrame(b, elB, time, clamp((bv.volume??b.volume??100)/100,0,1) * audioFadeFactor(b, time) * progress);
-  const fxA = { opacity:av.opacity, blur:av.blur, curves:a.curves, hsl:a.hsl };
-  const fxB = { opacity:bv.opacity, blur:b.blur, curves:b.curves, hsl:b.hsl };
+  const fxA = { opacity:av.opacity, blur:av.blur, curves:a.curves, hsl:a.hsl, rotation:a.rotation };
+  const fxB = { opacity:bv.opacity, blur:b.blur, curves:b.curves, hsl:b.hsl, rotation:b.rotation };
   const bw = box.w, bh = box.h;
   switch(type){
     case 'fade':
@@ -2351,13 +2381,13 @@ function renderFrame(time){
         previewVideoEl.volume = clamp((vkf.volume ?? vClip.volume ?? 100)/100, 0, 1) * audioFadeFactor(vClip,time);
         if (state.isPlaying){ if (previewVideoEl.paused) previewVideoEl.play().catch(()=>{}); }
         else { if (!previewVideoEl.paused) previewVideoEl.pause(); }
-        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
+        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
       } else if (vClip.type === 'image' && media){
         if (!previewVideoEl.paused) previewVideoEl.pause();
         currentVideoClipId = vClip.id;
         let img = imgCache[media.id];
         if (!img){ img = new Image(); img.src = media.url; imgCache[media.id]=img; }
-        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
+        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
         else clearCanvas();
       }
     } else {
@@ -3073,7 +3103,7 @@ function renderInspector(){
     setInspectorPanelOpen(true);
     insp.classList.add('show');
     $('#inspTitle').textContent = `${state.selectedClipIds.size} clips selected — Delete or Ripple-delete applies to all`;
-    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldCurves','fieldHSL','fieldChroma','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
+    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldRotation','fieldCurves','fieldHSL','fieldChroma','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
     return;
   }
   const found = state.selectedClipId ? findClip(state.selectedClipId) : null;
@@ -3091,6 +3121,7 @@ function renderInspector(){
   const showCrop = clip.type==='video' || clip.type==='image';
   const showOpacity = clip.type==='video' || clip.type==='image';
   const showBlur = clip.type==='video' || clip.type==='image';
+  const showRotation = clip.type==='video' || clip.type==='image';
   const showCurves = clip.type==='video' || clip.type==='image';
   const showHSL = clip.type==='video' || clip.type==='image';
   const showAnim = clip.type==='video' || clip.type==='image';
@@ -3104,6 +3135,7 @@ function renderInspector(){
   $('#fieldAudioFades').style.display = showAudioFades ? 'flex':'none';
   $('#fieldOpacity').style.display = showOpacity ? 'flex':'none';
   $('#fieldBlur').style.display = showBlur ? 'flex':'none';
+  $('#fieldRotation').style.display = showRotation ? 'flex':'none';
   $('#fieldCurves').style.display = showCurves ? 'flex':'none';
   $('#fieldHSL').style.display = showHSL ? 'flex':'none';
   $('#fieldAnim').style.display = showAnim ? 'flex':'none';
@@ -3148,6 +3180,11 @@ function renderInspector(){
   if (showBlur){
     $('#blurSlider').value = clip.blur ?? 0;
     $('#blurVal').textContent = (clip.blur ?? 0) + 'px';
+  }
+  if (showRotation){
+    const rot = clip.rotation ?? 0;
+    $('#rotationSlider').value = rot;
+    $('#rotationVal').textContent = Math.round(rot) + '°';
   }
   if (showCurves){
     if (curvesEditorClipId !== clip.id){ curvesEditorClipId = clip.id; curvesChannel = 'master'; }
@@ -3292,6 +3329,44 @@ $('#blurSlider').addEventListener('input', e=>{
   renderFrame(state.playhead);
 });
 $('#blurSlider').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+
+/* ---- rotation controls ---- */
+function normalizeRotation(deg){
+  deg = ((deg + 180) % 360 + 360) % 360 - 180;
+  return deg;
+}
+$('#rotationSlider').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId);
+  if (!found) return;
+  found.clip.rotation = parseFloat(e.target.value);
+  $('#rotationVal').textContent = Math.round(found.clip.rotation) + '°';
+  renderFrame(state.playhead);
+});
+$('#rotationSlider').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#btnRotateLeft').addEventListener('click', ()=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  found.clip.rotation = normalizeRotation((found.clip.rotation ?? 0) - 90);
+  $('#rotationSlider').value = found.clip.rotation;
+  $('#rotationVal').textContent = Math.round(found.clip.rotation) + '°';
+  renderFrame(state.playhead); renderTimeline();
+});
+$('#btnRotateRight').addEventListener('click', ()=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  found.clip.rotation = normalizeRotation((found.clip.rotation ?? 0) + 90);
+  $('#rotationSlider').value = found.clip.rotation;
+  $('#rotationVal').textContent = Math.round(found.clip.rotation) + '°';
+  renderFrame(state.playhead); renderTimeline();
+});
+$('#btnRotateReset').addEventListener('click', ()=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  found.clip.rotation = 0;
+  $('#rotationSlider').value = 0;
+  $('#rotationVal').textContent = '0°';
+  renderFrame(state.playhead); renderTimeline();
+});
 
 /* ---- chroma key controls ---- */
 $('#chromaEnabled').addEventListener('change', e=>{
@@ -4629,6 +4704,41 @@ async function openProjectFromDisk(){
 $('#btnSaveProject').addEventListener('click', saveProjectToDisk);
 $('#btnOpenProject').addEventListener('click', openProjectFromDisk);
 
+/* ---- capture current preview frame as a PNG ---- */
+async function captureFrame(){
+  if (!canvas.width || !canvas.height){ showToast('Nothing to capture yet.', 'error'); return; }
+  renderFrame(state.playhead); // make sure the canvas reflects the current playhead before grabbing it
+  canvas.toBlob(async (blob)=>{
+    if (!blob){ showToast('Could not capture the frame.', 'error'); return; }
+    const suggestedName = `clipflex-capture-${Date.now()}.png`;
+    const supportsFS = typeof window.showSaveFilePicker === 'function';
+    try{
+      if (supportsFS){
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description:'PNG Image', accept: {'image/png':['.png']} }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        showToast('Frame captured and saved!', 'success');
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = suggestedName;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(url), 1000);
+        showToast('Frame captured and downloaded!', 'success');
+      }
+    }catch(err){
+      if (err && err.name === 'AbortError') return; // user cancelled the save dialog
+      console.error(err);
+      showToast('Could not save the captured frame.', 'error');
+    }
+  }, 'image/png');
+}
+$('#btnCapture').addEventListener('click', captureFrame);
+
 /* ===================== NEW PROJECT ===================== */
 function newProject(){
   const hasContent = state.media.length>0 || state.tracks.video.length>0 ||
@@ -5139,7 +5249,21 @@ async function startExport(){
   const mimeCandidates = ['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'];
   let mime = mimeCandidates.find(m=>MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || 'video/webm';
 
-  const canvasStream = canvas.captureStream(30);
+  // captureStream(0) = manual mode. With an automatic fps (e.g. captureStream(30)),
+  // the stream sampler grabs whatever is on the canvas on its own fixed clock,
+  // independent of renderFrame(). On a slow machine, renderFrame() can take longer
+  // than one frame interval, so the sampler ends up capturing the same stale
+  // canvas content more than once — that's the duplicated/frozen-frame stutter
+  // baked into exports. In manual mode nothing is captured until we explicitly
+  // call requestFrame() right after a renderFrame() call below, so every frame
+  // written to the recording is guaranteed to be freshly composited.
+  const canRequestFrames = typeof canvas.captureStream === 'function' &&
+    (()=>{ try{ return typeof canvas.captureStream(0).getVideoTracks()[0].requestFrame === 'function'; }catch(e){ return false; } })();
+  // Fall back to automatic sampling if this browser lacks manual requestFrame()
+  // support (e.g. Safari) — captureStream(0) with no requestFrame calls would
+  // otherwise produce a blank/frozen recording.
+  const canvasStream = canRequestFrames ? canvas.captureStream(0) : canvas.captureStream(30);
+  const exportVideoTrack = canRequestFrames ? canvasStream.getVideoTracks()[0] : null;
   const tracks = [...canvasStream.getVideoTracks()];
   try{
     if (typeof previewVideoEl.captureStream === 'function'){
@@ -5223,8 +5347,18 @@ async function startExport(){
     const dur = totalDuration();
     $('#exportFill').style.width = Math.min(100,(state.playhead/dur*100))+'%';
     $('#exportPct').textContent = Math.min(100,Math.round(state.playhead/dur*100))+'%';
-    if (state.playhead >= dur){ state.playhead=dur; renderFrame(dur); finishExport(); return; }
+    if (state.playhead >= dur){
+      state.playhead=dur;
+      renderFrame(dur);
+      // final frame — make sure it actually lands in the recording before we stop.
+      try{ if (exportVideoTrack && typeof exportVideoTrack.requestFrame==='function') exportVideoTrack.requestFrame(); }catch(e){}
+      finishExport();
+      return;
+    }
     renderFrame(state.playhead);
+    // Push exactly the frame we just composited — never a stale duplicate from
+    // an overloaded automatic sampler (see captureStream(0) note above).
+    try{ if (exportVideoTrack && typeof exportVideoTrack.requestFrame==='function') exportVideoTrack.requestFrame(); }catch(e){}
     requestAnimationFrame(exportTick);
   });
 }
