@@ -183,6 +183,33 @@
   .brand .flex{color:var(--text-dim);font-weight:500;}
   .topbar-group{display:flex;align-items:center;gap:8px;}
   .divider-v{width:1px;height:22px;background:var(--border);margin:0 4px;}
+  .aspect-control{display:flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:3px 7px 3px 4px;box-shadow:0 1px 0 rgba(255,255,255,.02) inset;}
+  .aspect-picker{position:relative;}
+  .aspect-control #aspectSelect{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+  .aspect-picker-trigger{display:flex;align-items:center;gap:8px;border:0;background:transparent;color:var(--text);padding:6px 7px;min-width:142px;border-radius:6px;cursor:pointer;font:600 12px var(--sans);text-align:left;}
+  .aspect-picker-trigger:hover{background:var(--surface);}
+  .aspect-picker-trigger .aspect-trigger-icon{width:16px;height:16px;display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none;}
+  .aspect-picker-trigger .aspect-trigger-label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .aspect-picker-trigger .aspect-chevron{width:13px;height:13px;color:var(--text-faint);transition:transform .15s ease;}
+  .aspect-picker.open .aspect-chevron{transform:rotate(180deg);}
+  .aspect-menu{position:absolute;top:calc(100% + 7px);left:0;z-index:80;display:none;min-width:218px;padding:6px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-2);}
+  .aspect-picker.open .aspect-menu{display:block;}
+  .aspect-menu-head{padding:5px 9px 7px;color:var(--text-faint);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
+  .aspect-menu button{display:flex;align-items:center;gap:9px;width:100%;border:0;background:transparent;color:var(--text-dim);padding:8px 9px;border-radius:7px;cursor:pointer;font:500 12px var(--sans);text-align:left;}
+  .aspect-menu button:hover{background:var(--surface-2);color:var(--text);}
+  .aspect-menu button.active{background:rgba(87,224,196,.10);color:var(--text);}
+  .aspect-menu .aspect-check{width:14px;color:var(--accent);font-size:12px;text-align:center;}
+  .aspect-menu .aspect-shape{width:24px;height:18px;border:1px solid var(--border);border-radius:4px;background:var(--surface-2);display:inline-flex;align-items:center;justify-content:center;color:var(--text-faint);font-size:9px;font-family:var(--mono);}
+  .aspect-menu button.active .aspect-shape{border-color:var(--accent-dim);color:var(--accent);}
+  .aspect-menu .aspect-custom{margin-top:4px;padding-top:9px;border-top:1px solid var(--border-soft);color:var(--text);}
+  .aspect-menu .aspect-custom .aspect-shape{background:transparent;}
+  .aspect-control .canvas-zoom-inline{display:flex;align-items:center;gap:6px;padding-left:9px;border-left:1px solid var(--border);}
+  .aspect-control .canvas-zoom-inline .zoom-label{font-size:9.5px;color:var(--text-faint);font-weight:700;letter-spacing:.06em;text-transform:uppercase;}
+  .aspect-control .canvas-zoom-inline input[type=range]{width:108px;accent-color:var(--accent);}
+  .aspect-control .canvas-zoom-inline .zoom-val{font-family:var(--mono);font-size:10.5px;color:var(--text);min-width:40px;text-align:right;}
+  .aspect-control .canvas-zoom-inline button{border:1px solid transparent;background:transparent;color:var(--text-faint);padding:4px 6px;border-radius:6px;cursor:pointer;font-size:11px;display:flex;align-items:center;gap:4px;}
+  .aspect-control .canvas-zoom-inline button:hover{background:var(--surface);border-color:var(--border);color:var(--text);}
+  .aspect-control .canvas-zoom-inline button svg{width:12px;height:12px;}
 
   .theme-toggle{
     display:flex;align-items:center;gap:0;
@@ -810,12 +837,36 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 7v6h-6"/><path d="M21 13a9 9 0 1 1-3-7.7L21 7"/></svg>
       </button>
       <div class="divider-v"></div>
-      <select id="aspectSelect" class="icon-btn" title="Project aspect ratio" style="padding:7px 9px;">
-        <option value="1280x720" selected>16:9 Landscape</option>
-        <option value="720x1280">9:16 Portrait</option>
-        <option value="1080x1080">1:1 Square</option>
-        <option value="1080x1350">4:5 Portrait</option>
-      </select>
+      <div class="aspect-control" title="Project aspect ratio and shared canvas framing">
+        <div class="aspect-picker" id="aspectPicker">
+          <select id="aspectSelect" title="Project aspect ratio" aria-hidden="true" tabindex="-1">
+            <option value="1280x720" selected>16:9 Landscape</option>
+            <option value="720x1280">9:16 Portrait</option>
+            <option value="1080x1080">1:1 Square</option>
+            <option value="1080x1350">4:5 Portrait</option>
+            <option value="custom">Custom…</option>
+          </select>
+          <button type="button" class="aspect-picker-trigger" id="aspectPickerTrigger" aria-haspopup="listbox" aria-expanded="false">
+            <span class="aspect-trigger-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="6" width="18" height="12" rx="2"/></svg></span>
+            <span class="aspect-trigger-label" id="aspectTriggerLabel">16:9 Landscape</span>
+            <svg class="aspect-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="aspect-menu" id="aspectMenu" role="listbox" aria-label="Aspect ratio">
+            <div class="aspect-menu-head">Aspect Ratio</div>
+            <button type="button" data-aspect="1280x720"><span class="aspect-check">✓</span><span class="aspect-shape">16:9</span><span>Landscape</span></button>
+            <button type="button" data-aspect="720x1280"><span class="aspect-check">✓</span><span class="aspect-shape">9:16</span><span>Portrait</span></button>
+            <button type="button" data-aspect="1080x1080"><span class="aspect-check">✓</span><span class="aspect-shape">1:1</span><span>Square</span></button>
+            <button type="button" data-aspect="1080x1350"><span class="aspect-check">✓</span><span class="aspect-shape">4:5</span><span>Portrait</span></button>
+            <button type="button" class="aspect-custom" data-aspect="custom"><span class="aspect-check">+</span><span class="aspect-shape">W×H</span><span>Custom…</span></button>
+          </div>
+        </div>
+        <div class="canvas-zoom-inline">
+          <span class="zoom-label">Canvas</span>
+          <input type="range" id="canvasZoomSlider" min="25" max="400" step="1" value="100" aria-label="Shared canvas zoom">
+          <span class="zoom-val" id="canvasZoomVal">100%</span>
+          <button type="button" id="btnCanvasReset" title="Reset canvas position and zoom"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-7.7L3 7"/><path d="M3 3v4h4"/></svg>Reset</button>
+        </div>
+      </div>
       <div class="divider-v"></div>
       <div class="divider-v"></div>
       <button class="icon-btn" id="btnNewProject" title="Start a new project (clears the current timeline and media)">
@@ -949,11 +1000,6 @@
           <button class="btn" id="btnRotateRight" type="button" title="Rotate 90° right">⟳ 90°</button>
           <button class="btn danger-ghost" id="btnRotateReset" type="button" title="Reset rotation">Reset</button>
         </span>
-      </div>
-      <div class="insp-field" id="fieldCanvasFit" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
-        <span class="insp-field"><label>Canvas Zoom</label><input type="range" id="canvasZoomSlider" min="100" max="400" step="1" value="100"><span class="insp-val" id="canvasZoomVal">100%</span></span>
-        <button class="btn danger-ghost" id="btnCanvasReset" type="button">Reset position &amp; zoom</button>
-        <div style="font-size:10.5px;color:var(--text-faint);">Drag directly on the preview to reposition — great for filling a new aspect ratio without black bars.</div>
       </div>
       <div class="insp-field" id="fieldCurves" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
         <label>RGB Curves</label>
@@ -1096,10 +1142,17 @@
             <label>Shape</label>
             <select id="maskShape" style="flex:1;min-width:120px;">
               <option value="rect">Rectangle</option>
+              <option value="rounded">Rounded Rectangle</option>
               <option value="circle">Circle</option>
+              <option value="ellipse">Ellipse / Oval</option>
               <option value="triangle">Triangle</option>
+              <option value="diamond">Diamond</option>
+              <option value="pentagon">Pentagon</option>
+              <option value="hexagon">Hexagon</option>
               <option value="star">Star</option>
+              <option value="flower">Flower</option>
               <option value="heart">Heart</option>
+              <option value="arrow">Arrow</option>
             </select>
           </span>
           <span class="insp-field" style="width:100%;">
@@ -1111,6 +1164,11 @@
             <label>Feather</label>
             <input type="range" id="maskFeather" min="0" max="60" value="8">
             <span class="insp-val" id="maskFeatherVal">8</span>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label>Rotation</label>
+            <input type="range" id="maskRotation" min="-180" max="180" value="0">
+            <span class="insp-val" id="maskRotationVal">0°</span>
           </span>
           <span class="insp-field" style="width:100%;">
             <label style="flex:1;">Invert</label>
@@ -1368,8 +1426,11 @@ const state = {
   previewMode: 'timeline',   // 'timeline' | 'asset'
   assetPreviewId: null,
   activeMediaId: null,
+  // Project/canvas-level zoom and pan. This is intentionally shared by all main-track clips.
+  canvasFit: { scale:1, offsetX:0, offsetY:0 },
   exporting: false,
 };
+let canvasGuideState = { active:false, vertical:false, horizontal:false, left:false, right:false, top:false, bottom:false };
 let undoStack = [], redoStack = [];
 
 /* ===================== DOM SHORTCUTS ===================== */
@@ -1539,7 +1600,7 @@ function findGapAt(trackType, time){
 }
 
 /* ===================== HISTORY (undo/redo) ===================== */
-function snapshotTracks(){ return JSON.parse(JSON.stringify(state.tracks)); }
+function snapshotTracks(){ return { tracks: JSON.parse(JSON.stringify(state.tracks)), canvasFit: { ...state.canvasFit } }; }
 function pushHistory(){
   undoStack.push(snapshotTracks());
   if (undoStack.length > 60) undoStack.shift();
@@ -1550,7 +1611,9 @@ function pushHistory(){
 function undo(){
   if (!undoStack.length) return;
   redoStack.push(snapshotTracks());
-  state.tracks = undoStack.pop();
+  const snap = undoStack.pop();
+  state.tracks = snap.tracks || snap;
+  if (snap.canvasFit) state.canvasFit = { ...snap.canvasFit };
   state.selectedClipId = null;
   updateHistoryButtons();
   renderTimeline(); renderInspector(); renderFrame(state.playhead);
@@ -1558,7 +1621,9 @@ function undo(){
 function redo(){
   if (!redoStack.length) return;
   undoStack.push(snapshotTracks());
-  state.tracks = redoStack.pop();
+  const snap = redoStack.pop();
+  state.tracks = snap.tracks || snap;
+  if (snap.canvasFit) state.canvasFit = { ...snap.canvasFit };
   state.selectedClipId = null;
   updateHistoryButtons();
   renderTimeline(); renderInspector(); renderFrame(state.playhead);
@@ -1580,12 +1645,88 @@ $('#themeToggle').addEventListener('click', ()=>{
 applyTheme();
 
 /* ===================== ASPECT RATIO ===================== */
-$('#aspectSelect').addEventListener('change', e=>{
-  const [w,h] = e.target.value.split('x').map(Number);
+function syncCanvasZoomUI(){
+  const cf = ensureCanvasFit();
+  const pct = Math.round((cf.scale ?? 1) * 100);
+  $('#canvasZoomSlider').value = clamp(pct, 25, 400);
+  $('#canvasZoomVal').textContent = pct + '%';
+}
+function applyAspectRatio(w, h){
+  w = Math.round(Number(w)); h = Math.round(Number(h));
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w < 16 || h < 16 || w > 7680 || h > 7680) return false;
   canvas.width = w; canvas.height = h;
   canvas.style.aspectRatio = w+'/'+h;
+  syncCanvasZoomUI();
   renderFrame(state.playhead);
+  queueAutosave();
+  return true;
+}
+function syncAspectPickerUI(){
+  const sel=$('#aspectSelect');
+  const trigger=$('#aspectPickerTrigger');
+  const label=$('#aspectTriggerLabel');
+  if(!sel||!trigger||!label)return;
+  const selected=sel.value;
+  const opt=sel.querySelector(`option[value="${CSS.escape(selected)}"]`);
+  label.textContent=opt ? opt.textContent : `${canvas.width}×${canvas.height}`;
+  document.querySelectorAll('#aspectMenu button[data-aspect]').forEach(btn=>{
+    const active=btn.dataset.aspect===selected;
+    btn.classList.toggle('active',active);
+    btn.setAttribute('aria-selected',active?'true':'false');
+  });
+}
+function closeAspectPicker(){
+  const picker=$('#aspectPicker'); if(!picker)return;
+  picker.classList.remove('open'); $('#aspectPickerTrigger')?.setAttribute('aria-expanded','false');
+}
+function openCustomAspectDialog(){
+  const currentW=canvas.width||1280, currentH=canvas.height||720;
+  const raw=prompt('Enter custom canvas size as Width × Height (for example 1080x1350):', `${currentW}x${currentH}`);
+  if(raw===null){ syncAspectPickerUI(); return; }
+  const m=raw.trim().match(/^(\d+)\s*[x×]\s*(\d+)$/i);
+  if(!m){ showToast('Please enter dimensions like 1080x1350.','error'); syncAspectPickerUI(); return; }
+  const w=Number(m[1]), h=Number(m[2]);
+  if(!applyAspectRatio(w,h)){ showToast('Dimensions must be between 16 and 7680 pixels.','error'); syncAspectPickerUI(); return; }
+  const sel=$('#aspectSelect');
+  sel.value='custom';
+  const custom=sel.querySelector('option[value="custom"]');
+  if(custom) custom.textContent=`Custom (${w}×${h})`;
+  syncAspectPickerUI();
+}
+$('#aspectSelect').addEventListener('change', e=>{
+  if(e.target.value==='custom'){ openCustomAspectDialog(); return; }
+  const [w,h]=e.target.value.split('x').map(Number);
+  applyAspectRatio(w,h);
+  const custom=e.target.querySelector('option[value="custom"]');
+  if(custom) custom.textContent='Custom…';
+  syncAspectPickerUI();
 });
+$('#aspectPickerTrigger').addEventListener('click', e=>{
+  e.stopPropagation();
+  const picker=$('#aspectPicker');
+  const willOpen=!picker.classList.contains('open');
+  picker.classList.toggle('open',willOpen);
+  $('#aspectPickerTrigger').setAttribute('aria-expanded',willOpen?'true':'false');
+  if(willOpen) syncAspectPickerUI();
+});
+document.querySelectorAll('#aspectMenu button[data-aspect]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const value=btn.dataset.aspect;
+    $('#aspectSelect').value=value;
+    if(value==='custom') openCustomAspectDialog();
+    else {
+      const [w,h]=value.split('x').map(Number);
+      applyAspectRatio(w,h);
+      const custom=$('#aspectSelect').querySelector('option[value="custom"]');
+      if(custom) custom.textContent='Custom…';
+      syncAspectPickerUI();
+    }
+    closeAspectPicker();
+  });
+});
+document.addEventListener('click', e=>{ if(!e.target.closest('#aspectPicker')) closeAspectPicker(); });
+syncAspectPickerUI();
+
 
 /* ===================== MEDIA IMPORT ===================== */
 const dropzone = $('#dropzone');
@@ -2485,6 +2626,13 @@ function paintFrame(frame, crop, alpha, fx, box, offsetX, offsetY, scaleMul){
   const { source, sw, sh } = frame;
   let sx=0, sy=0, sWidth=sw, sHeight=sh;
   if (crop){ sWidth = Math.max(1, crop.w*sw); sHeight = Math.max(1, crop.h*sh); sx = crop.x*sw; sy = crop.y*sh; }
+  // Shared canvas zoom/pan also applies during main-track transitions.
+  if (fx && fx.canvasFit && box.x===0 && box.y===0 && box.w===canvas.width && box.h===canvas.height){
+    const cf = fx.canvasFit;
+    scaleMul *= cf.scale ?? 1;
+    offsetX += (cf.offsetX ?? 0) * box.w;
+    offsetY += (cf.offsetY ?? 0) * box.h;
+  }
   const scale = Math.min(box.w/sWidth, box.h/sHeight) * scaleMul;
   const w = sWidth*scale, h = sHeight*scale;
   const x = box.x + (box.w-w)/2 + offsetX, y = box.y + (box.h-h)/2 + offsetY;
@@ -2508,8 +2656,8 @@ function renderTransitionComposite(trans, time, elA, elB, box){
   const av=getAnimatedClipValues(a,time), bv=getAnimatedClipValues(b,time);
   const fa = sampleClipFrame(a, elA, time, clamp((av.volume??a.volume??100)/100,0,1) * audioFadeFactor(a, time) * (1-progress));
   const fb = sampleClipFrame(b, elB, time, clamp((bv.volume??b.volume??100)/100,0,1) * audioFadeFactor(b, time) * progress);
-  const fxA = { opacity:av.opacity, blur:av.blur, curves:a.curves, hsl:a.hsl, rotation:a.rotation };
-  const fxB = { opacity:bv.opacity, blur:b.blur, curves:b.curves, hsl:b.hsl, rotation:b.rotation };
+  const fxA = { opacity:av.opacity, blur:av.blur, curves:a.curves, hsl:a.hsl, rotation:a.rotation, canvasFit:state.canvasFit };
+  const fxB = { opacity:bv.opacity, blur:b.blur, curves:b.curves, hsl:b.hsl, rotation:b.rotation, canvasFit:state.canvasFit };
   const bw = box.w, bh = box.h;
   switch(type){
     case 'fade':
@@ -2597,13 +2745,13 @@ function renderFrame(time){
         previewVideoEl.volume = clamp((vkf.volume ?? vClip.volume ?? 100)/100, 0, 1) * audioFadeFactor(vClip,time);
         if (state.isPlaying){ if (previewVideoEl.paused) previewVideoEl.play().catch(()=>{}); }
         else { if (!previewVideoEl.paused) previewVideoEl.pause(); }
-        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, canvasFit:vClip.canvasFit, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start, background:vClip.background}, vClip);
+        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, canvasFit:state.canvasFit, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start, background:vClip.background}, vClip);
       } else if (vClip.type === 'image' && media){
         if (!previewVideoEl.paused) previewVideoEl.pause();
         currentVideoClipId = vClip.id;
         let img = imgCache[media.id];
         if (!img){ img = new Image(); img.src = media.url; imgCache[media.id]=img; }
-        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, canvasFit:vClip.canvasFit, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start, background:vClip.background}, vClip);
+        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, canvasFit:state.canvasFit, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start, background:vClip.background}, vClip);
         else clearCanvas();
       }
     } else {
@@ -2812,22 +2960,58 @@ function startPipMove(clip, e, rect){
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
-/* free-drag reposition for the Canvas Zoom tool — the main video/image clip is allowed to float
-   anywhere (including past the canvas edges), unlike the PIP box which is clamped to 0..1 */
+/* Shared Canvas Zoom drag. The transform belongs to the project canvas, not an individual clip.
+   While dragging, lightweight blue alignment guides appear and the canvas snaps to center/edges. */
+function canvasFitGuideFlags(fit, rect){
+  const tx = 10/Math.max(1,rect.width), ty = 10/Math.max(1,rect.height);
+  return {
+    vertical: Math.abs(fit.offsetX) < tx,
+    horizontal: Math.abs(fit.offsetY) < ty,
+    left: false, right: false, top: false, bottom: false
+  };
+}
+function drawCanvasAlignmentGuides(){
+  if (!canvasGuideState.active) return;
+  ctx.save();
+  ctx.setLineDash([7,5]);
+  ctx.lineWidth = Math.max(1.5, Math.min(canvas.width,canvas.height)*0.003);
+  ctx.strokeStyle = 'rgba(55,175,255,.92)';
+  ctx.shadowColor = 'rgba(55,175,255,.35)';
+  ctx.shadowBlur = 4;
+  if (canvasGuideState.vertical){
+    ctx.beginPath(); ctx.moveTo(canvas.width/2,0); ctx.lineTo(canvas.width/2,canvas.height); ctx.stroke();
+  }
+  if (canvasGuideState.horizontal){
+    ctx.beginPath(); ctx.moveTo(0,canvas.height/2); ctx.lineTo(canvas.width,canvas.height/2); ctx.stroke();
+  }
+  ctx.restore();
+}
+function clearCanvasAlignmentGuides(){
+  canvasGuideState = {active:false,vertical:false,horizontal:false,left:false,right:false,top:false,bottom:false};
+}
 function startCanvasFitDrag(clip, e, rect){
   let pushed = false;
   const startClientX = e.clientX, startClientY = e.clientY;
-  const orig = { ...ensureCanvasFit(clip) };
+  const orig = { ...(state.canvasFit || {scale:1,offsetX:0,offsetY:0}) };
   const onMove = ev=>{
     if (!pushed){ pushHistory(); pushed = true; }
     const dx = (ev.clientX-startClientX)/rect.width;
     const dy = (ev.clientY-startClientY)/rect.height;
-    clip.canvasFit = { scale: orig.scale, offsetX: orig.offsetX+dx, offsetY: orig.offsetY+dy };
+    const fit = { scale: orig.scale, offsetX: orig.offsetX+dx, offsetY: orig.offsetY+dy };
+    const snapX = 12/Math.max(1,rect.width), snapY = 12/Math.max(1,rect.height);
+    if (Math.abs(fit.offsetX) < snapX) fit.offsetX = 0;
+    if (Math.abs(fit.offsetY) < snapY) fit.offsetY = 0;
+    state.canvasFit = fit;
+    canvasGuideState = { ...canvasFitGuideFlags(fit, rect), active:true };
     renderFrame(state.playhead);
+    drawCanvasAlignmentGuides();
   };
   const onUp = ()=>{
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
+    clearCanvasAlignmentGuides();
+    renderFrame(state.playhead);
+    if (pushed) renderTimeline();
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
@@ -3357,7 +3541,7 @@ function renderInspector(){
     setInspectorPanelOpen(true);
     insp.classList.add('show');
     $('#inspTitle').textContent = `${state.selectedClipIds.size} clips selected — Delete or Ripple-delete applies to all`;
-    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldRotation','fieldCanvasFit','fieldCurves','fieldHSL','fieldChroma','fieldMask','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
+    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldRotation','fieldCurves','fieldHSL','fieldChroma','fieldMask','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
     return;
   }
   const found = state.selectedClipId ? findClip(state.selectedClipId) : null;
@@ -3376,7 +3560,6 @@ function renderInspector(){
   const showOpacity = clip.type==='video' || clip.type==='image';
   const showBlur = clip.type==='video' || clip.type==='image';
   const showRotation = clip.type==='video' || clip.type==='image';
-  const showCanvasFit = (clip.type==='video' || clip.type==='image') && track==='video';
   const showCurves = clip.type==='video' || clip.type==='image';
   const showHSL = clip.type==='video' || clip.type==='image';
   const showAnim = clip.type==='video' || clip.type==='image';
@@ -3392,7 +3575,6 @@ function renderInspector(){
   $('#fieldOpacity').style.display = showOpacity ? 'flex':'none';
   $('#fieldBlur').style.display = showBlur ? 'flex':'none';
   $('#fieldRotation').style.display = showRotation ? 'flex':'none';
-  $('#fieldCanvasFit').style.display = showCanvasFit ? 'flex':'none';
   $('#fieldCurves').style.display = showCurves ? 'flex':'none';
   $('#fieldHSL').style.display = showHSL ? 'flex':'none';
   $('#fieldAnim').style.display = showAnim ? 'flex':'none';
@@ -3444,12 +3626,6 @@ function renderInspector(){
     $('#rotationSlider').value = rot;
     $('#rotationVal').textContent = Math.round(rot) + '°';
   }
-  if (showCanvasFit){
-    const cf = clip.canvasFit || { scale:1, offsetX:0, offsetY:0 };
-    const pct = Math.round((cf.scale ?? 1)*100);
-    $('#canvasZoomSlider').value = pct;
-    $('#canvasZoomVal').textContent = pct + '%';
-  }
   if (showCurves){
     if (curvesEditorClipId !== clip.id){ curvesEditorClipId = clip.id; curvesChannel = 'master'; }
     syncCurvesTabs();
@@ -3477,8 +3653,10 @@ function renderInspector(){
     $('#maskShape').value = mask.shape;
     $('#maskSize').value = mask.size;
     $('#maskSizeVal').textContent = mask.size + '%';
-    $('#maskFeather').value = mask.feather;
-    $('#maskFeatherVal').textContent = mask.feather;
+    $('#maskFeather').value = mask.feather ?? 8;
+    $('#maskFeatherVal').textContent = mask.feather ?? 8;
+    $('#maskRotation').value = mask.rotation ?? 0;
+    $('#maskRotationVal').textContent = (mask.rotation ?? 0) + '°';
     $('#maskInvert').checked = !!mask.invert;
     $('#maskHint').textContent = track==='pip'
       ? "Cuts this PIP clip into the shape — the masked-out area shows the main video underneath."
@@ -3646,26 +3824,24 @@ $('#btnRotateReset').addEventListener('click', ()=>{
   renderFrame(state.playhead); renderTimeline();
 });
 
-/* ---- canvas fit (manual zoom + free-drag positioning within the project's aspect ratio) ---- */
-function ensureCanvasFit(clip){
-  if (!clip.canvasFit) clip.canvasFit = { scale:1, offsetX:0, offsetY:0 };
-  return clip.canvasFit;
+/* ---- canvas fit (shared project/canvas zoom + pan) ---- */
+function ensureCanvasFit(){
+  if (!state.canvasFit) state.canvasFit = { scale:1, offsetX:0, offsetY:0 };
+  return state.canvasFit;
 }
+syncCanvasZoomUI();
 $('#canvasZoomSlider').addEventListener('input', e=>{
-  const found = findClip(state.selectedClipId);
-  if (!found) return;
-  const cf = ensureCanvasFit(found.clip);
+  const cf = ensureCanvasFit();
   cf.scale = parseInt(e.target.value,10)/100;
   $('#canvasZoomVal').textContent = Math.round(cf.scale*100) + '%';
   renderFrame(state.playhead);
 });
-$('#canvasZoomSlider').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#canvasZoomSlider').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); queueAutosave(); });
 $('#btnCanvasReset').addEventListener('click', ()=>{
-  const found = findClip(state.selectedClipId); if (!found) return;
   pushHistory();
-  found.clip.canvasFit = { scale:1, offsetX:0, offsetY:0 };
-  $('#canvasZoomSlider').value = 100;
-  $('#canvasZoomVal').textContent = '100%';
+  state.canvasFit = { scale:1, offsetX:0, offsetY:0 };
+  syncCanvasZoomUI();
+  clearCanvasAlignmentGuides();
   renderFrame(state.playhead); renderTimeline();
 });
 
@@ -3733,6 +3909,13 @@ $('#maskFeather').addEventListener('input', e=>{
   renderFrame(state.playhead);
 });
 $('#maskFeather').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#maskRotation').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureMask(found.clip).rotation = parseInt(e.target.value,10);
+  $('#maskRotationVal').textContent = e.target.value + '°';
+  renderFrame(state.playhead);
+});
+$('#maskRotation').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
 $('#maskInvert').addEventListener('change', e=>{
   const found = findClip(state.selectedClipId); if (!found) return;
   pushHistory();
@@ -4072,7 +4255,7 @@ function chromaKeyedCanvas(source, sx, sy, sWidth, sHeight, dw, dh, chroma){
      - mask on the main Video track clip -> reveals that clip's background fill (or black)
      - mask on a PIP clip -> reveals the main video track underneath it
    No separate "layer below" lookup is needed; it falls out of draw order for free. */
-function defaultMask(){ return { enabled:false, shape:'circle', size:90, feather:8, invert:false }; }
+function defaultMask(){ return { enabled:false, shape:'circle', size:90, feather:8, invert:false, rotation:0, roundness:18 }; }
 function ensureMask(clip){
   if (!clip.mask) clip.mask = defaultMask();
   return clip.mask;
@@ -4090,9 +4273,25 @@ function maskShapePath(shape, w, h){
       p.arc(cx, cy, Math.max(0.01,r), 0, Math.PI*2);
       break;
     }
+    case 'ellipse':
+      p.ellipse(cx, cy, w/2, h/2, 0, 0, Math.PI*2);
+      break;
     case 'triangle':
       p.moveTo(cx, 0); p.lineTo(w, h); p.lineTo(0, h); p.closePath();
       break;
+    case 'diamond':
+      p.moveTo(cx, 0); p.lineTo(w, cy); p.lineTo(cx, h); p.lineTo(0, cy); p.closePath();
+      break;
+    case 'pentagon':
+    case 'hexagon': {
+      const sides = shape==='pentagon' ? 5 : 6;
+      const r = Math.min(w,h)/2;
+      let rot = -Math.PI/2;
+      p.moveTo(cx + Math.cos(rot)*r, cy + Math.sin(rot)*r);
+      for(let i=1;i<sides;i++){ rot = -Math.PI/2 + i*(Math.PI*2/sides); p.lineTo(cx + Math.cos(rot)*r, cy + Math.sin(rot)*r); }
+      p.closePath();
+      break;
+    }
     case 'star': {
       const spikes = 5, outerR = Math.min(w,h)/2, innerR = outerR*0.42;
       let rot = -Math.PI/2, x, y;
@@ -4105,6 +4304,17 @@ function maskShapePath(shape, w, h){
       p.closePath();
       break;
     }
+    case 'flower': {
+      const r = Math.min(w,h)/2, petals = 8;
+      for(let i=0;i<petals*2;i++){
+        const a = -Math.PI/2 + i*Math.PI/petals;
+        const rr = i%2===0 ? r : r*0.62;
+        const x=cx+Math.cos(a)*rr, y=cy+Math.sin(a)*rr;
+        if(i===0) p.moveTo(x,y); else p.lineTo(x,y);
+      }
+      p.closePath();
+      break;
+    }
     case 'heart': {
       const top = h*0.28;
       p.moveTo(cx, h);
@@ -4113,9 +4323,15 @@ function maskShapePath(shape, w, h){
       p.closePath();
       break;
     }
+    case 'arrow':
+      p.moveTo(w*0.08,h*0.30); p.lineTo(w*0.58,h*0.30); p.lineTo(w*0.58,h*0.08);
+      p.lineTo(w*0.92,cy); p.lineTo(w*0.58,h*0.92); p.lineTo(w*0.58,h*0.70);
+      p.lineTo(w*0.08,h*0.70); p.closePath();
+      break;
+    case 'rounded':
     case 'rect':
     default: {
-      const rr = Math.min(w,h)*0.08;
+      const rr = Math.min(w,h) * (shape==='rounded' ? 0.24 : 0.08);
       if (p.roundRect) p.roundRect(0, 0, w, h, rr); else p.rect(0, 0, w, h);
       break;
     }
@@ -4140,7 +4356,11 @@ function applyMaskToCanvas(mask, rectX, rectY, rectW, rectH, contentCanvas){
   const shapeX = rectX + (rectW-shapeW)/2, shapeY = rectY + (rectH-shapeH)/2;
   sctx.save();
   if (feather>0) sctx.filter = `blur(${feather}px)`;
-  sctx.translate(shapeX, shapeY);
+  const shapeCX = shapeX + shapeW/2, shapeCY = shapeY + shapeH/2;
+  const rotation = ((mask.rotation ?? 0) * Math.PI) / 180;
+  sctx.translate(shapeCX, shapeCY);
+  sctx.rotate(rotation);
+  sctx.translate(-shapeW/2, -shapeH/2);
   sctx.fillStyle = '#fff';
   sctx.fill(maskShapePath(mask.shape, shapeW, shapeH));
   sctx.restore();
@@ -5185,6 +5405,7 @@ async function saveProjectToDisk(){
     const payload = {
       clipflexProject: true, version: 2,
       canvasW: canvas.width, canvasH: canvas.height,
+      canvasFit: { ...ensureCanvasFit() },
       trackOrder: [...state.trackOrder],
       tracks: state.tracks, media: mediaOut, savedAt: Date.now()
     };
@@ -5243,6 +5464,11 @@ async function openProjectFromDisk(){
       text: Array.isArray(tr.text) ? tr.text : [],
       pip: Array.isArray(tr.pip) ? tr.pip : []
     };
+    const legacyFit = state.tracks.video.find(c=>c && c.canvasFit)?.canvasFit;
+    state.canvasFit = { ...(payload.canvasFit || legacyFit || {scale:1,offsetX:0,offsetY:0}) };
+    state.canvasFit.scale = clamp(Number(state.canvasFit.scale)||1, 0.25, 4);
+    state.canvasFit.offsetX = Number(state.canvasFit.offsetX)||0;
+    state.canvasFit.offsetY = Number(state.canvasFit.offsetY)||0;
     if (Array.isArray(payload.trackOrder) && payload.trackOrder.length===4){
       const validOrder = payload.trackOrder.filter(t=>['video','audio','text','pip'].includes(t));
       if (validOrder.length===4) { state.trackOrder = validOrder; applyTrackOrder(); }
@@ -5252,6 +5478,7 @@ async function openProjectFromDisk(){
       canvas.style.aspectRatio = payload.canvasW+'/'+payload.canvasH;
       const opt = `${payload.canvasW}x${payload.canvasH}`;
       if ($('#aspectSelect').querySelector(`option[value="${opt}"]`)) $('#aspectSelect').value = opt;
+      syncAspectPickerUI();
     }
     state.selectedClipId = null; state.selectedClipIds = new Set();
     state.playhead = 0; imgCache = {}; bgImgCache = {};
@@ -6163,6 +6390,7 @@ async function autosaveSession(reason='timer'){
     db=await openAutosaveDB();
     const snapshot={
       version:2,savedAt:Date.now(),reason,canvasW:canvas.width,canvasH:canvas.height,
+      canvasFit:{...ensureCanvasFit()},
       theme:state.theme,trackOrder:[...state.trackOrder],tracks:JSON.parse(JSON.stringify(state.tracks)),
       media:state.media.map(m=>({id:m.id,name:m.name,type:m.type,duration:m.duration,thumb:m.thumb}))
     };
@@ -6208,10 +6436,16 @@ async function restoreAutosaveSession(snapshot){
     state.media=records.map(m=>({id:m.id,name:m.name,type:m.type,duration:m.duration,thumb:m.thumb,url:URL.createObjectURL(m.blob)}));
     const tr=snapshot.tracks||{};
     state.tracks={video:Array.isArray(tr.video)?tr.video:[],audio:Array.isArray(tr.audio)?tr.audio:[],text:Array.isArray(tr.text)?tr.text:[],pip:Array.isArray(tr.pip)?tr.pip:[]};
+    const legacyFit=state.tracks.video.find(c=>c&&c.canvasFit)?.canvasFit;
+    state.canvasFit={...(snapshot.canvasFit||legacyFit||{scale:1,offsetX:0,offsetY:0})};
+    state.canvasFit.scale=clamp(Number(state.canvasFit.scale)||1,0.25,4);
+    state.canvasFit.offsetX=Number(state.canvasFit.offsetX)||0;
+    state.canvasFit.offsetY=Number(state.canvasFit.offsetY)||0;
     if(snapshot.canvasW&&snapshot.canvasH){
       canvas.width=snapshot.canvasW; canvas.height=snapshot.canvasH; canvas.style.aspectRatio=snapshot.canvasW+'/'+snapshot.canvasH;
       const opt=`${snapshot.canvasW}x${snapshot.canvasH}`; const sel=$('#aspectSelect');
       if(sel.querySelector(`option[value="${opt}"]`)) sel.value=opt;
+      syncAspectPickerUI();
     }
     if(snapshot.theme==='dark'||snapshot.theme==='light'){state.theme=snapshot.theme;localStorage.setItem('clipflex_theme',state.theme);applyTheme();}
     if(Array.isArray(snapshot.trackOrder)&&snapshot.trackOrder.length===4){
