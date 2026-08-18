@@ -581,6 +581,36 @@
   #transitionPopover .tp-dur-row span{font-family:var(--mono);font-size:11px;color:var(--text);min-width:36px;text-align:right;}
   #transitionPopover.disabled .tp-dur-row{opacity:.4;pointer-events:none;}
 
+  /* ============ BACKGROUND POPOVER ============ */
+  #backgroundPopover{
+    position:fixed;z-index:100;display:none;
+    background:var(--bg-elevated);border:1px solid var(--border);
+    border-radius:var(--radius-md);box-shadow:var(--shadow-2);
+    padding:12px;width:252px;
+  }
+  #backgroundPopover .tp-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;}
+  #backgroundPopover .tp-head span{font-size:12.5px;font-weight:700;color:var(--text);}
+  #backgroundPopover .tp-close{background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;padding:2px 4px;line-height:1;}
+  #backgroundPopover .tp-close:hover{color:var(--text);}
+  #backgroundPopover .tp-sub{font-size:10.5px;color:var(--text-faint);margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  #backgroundPopover .tp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;}
+  #backgroundPopover .tp-type-btn{
+    display:flex;flex-direction:column;align-items:center;gap:4px;
+    background:var(--surface-2);border:1px solid var(--border);color:var(--text-dim);
+    border-radius:8px;padding:8px 4px;font-size:10px;font-weight:600;cursor:pointer;font-family:inherit;
+  }
+  #backgroundPopover .tp-type-btn:hover{border-color:var(--text-faint);color:var(--text);}
+  #backgroundPopover .tp-type-btn.active{border-color:var(--accent);color:var(--accent);background:rgba(87,224,196,.1);}
+  #backgroundPopover .tp-type-btn svg{width:17px;height:17px;}
+  #backgroundPopover .bg-sub-panel{display:flex;flex-direction:column;gap:8px;}
+  #backgroundPopover .bg-row{display:flex;align-items:center;gap:8px;}
+  #backgroundPopover .bg-row label{font-size:11px;color:var(--text-dim);font-weight:600;flex:none;}
+  #backgroundPopover .bg-row input[type=range]{flex:1;}
+  #backgroundPopover .bg-row span.insp-val{font-family:var(--mono);font-size:11px;color:var(--text);min-width:32px;text-align:right;}
+  #backgroundPopover .bg-row input[type=color]{width:34px;height:28px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;}
+  #backgroundPopover .bg-image-preview{width:100%;height:60px;border-radius:6px;border:1px solid var(--border);background-size:cover;background-position:center;background-color:var(--surface-2);}
+  #backgroundPopover .bg-hint{font-size:10px;color:var(--text-faint);line-height:1.4;}
+
   #marqueeBox{
     position:fixed;display:none;z-index:50;pointer-events:none;
     background:rgba(87,224,196,.14);
@@ -920,6 +950,11 @@
           <button class="btn danger-ghost" id="btnRotateReset" type="button" title="Reset rotation">Reset</button>
         </span>
       </div>
+      <div class="insp-field" id="fieldCanvasFit" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+        <span class="insp-field"><label>Canvas Zoom</label><input type="range" id="canvasZoomSlider" min="100" max="400" step="1" value="100"><span class="insp-val" id="canvasZoomVal">100%</span></span>
+        <button class="btn danger-ghost" id="btnCanvasReset" type="button">Reset position &amp; zoom</button>
+        <div style="font-size:10.5px;color:var(--text-faint);">Drag directly on the preview to reposition — great for filling a new aspect ratio without black bars.</div>
+      </div>
       <div class="insp-field" id="fieldCurves" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
         <label>RGB Curves</label>
         <div class="curves-tabs">
@@ -1051,6 +1086,39 @@
           <div style="font-size:10.5px;color:var(--text-faint);">Removes the key color so the layer below shows through — great for green/blue screen PIP clips.</div>
         </div>
       </div>
+      <div class="insp-field" id="fieldMask" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+        <span class="insp-field" style="width:100%;">
+          <label style="flex:1;">Mask</label>
+          <input type="checkbox" id="maskEnabled" style="width:16px;height:16px;cursor:pointer;">
+        </span>
+        <div id="maskControls" style="display:none;flex-direction:column;align-items:flex-start;gap:8px;width:100%;">
+          <span class="insp-field" style="width:100%;">
+            <label>Shape</label>
+            <select id="maskShape" style="flex:1;min-width:120px;">
+              <option value="rect">Rectangle</option>
+              <option value="circle">Circle</option>
+              <option value="triangle">Triangle</option>
+              <option value="star">Star</option>
+              <option value="heart">Heart</option>
+            </select>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label>Size</label>
+            <input type="range" id="maskSize" min="10" max="150" value="90">
+            <span class="insp-val" id="maskSizeVal">90%</span>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label>Feather</label>
+            <input type="range" id="maskFeather" min="0" max="60" value="8">
+            <span class="insp-val" id="maskFeatherVal">8</span>
+          </span>
+          <span class="insp-field" style="width:100%;">
+            <label style="flex:1;">Invert</label>
+            <input type="checkbox" id="maskInvert" style="width:16px;height:16px;cursor:pointer;">
+          </span>
+          <div style="font-size:10.5px;color:var(--text-faint);" id="maskHint">Cuts this clip into the chosen shape — the masked-out area shows what's behind it.</div>
+        </div>
+      </div>
       <div id="fieldPipHint" style="display:none;font-size:10.5px;color:var(--text-faint);">Drag the PIP box on the preview to move it — drag its bottom-right corner to resize.</div>
     </div>
   </div>
@@ -1076,6 +1144,19 @@
       <button class="btn" id="btnDuplicate" title="Duplicate selected clip (Ctrl+D)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>
         Duplicate
+      </button>
+      <button class="btn" id="btnReplace" title="Replace this clip's content with a different file from your device">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-15.3 6.4L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.3-6.4L21 8"/><path d="M21 3v5h-5"/></svg>
+        Replace
+      </button>
+      <input type="file" id="replaceFileInput" style="display:none">
+      <button class="btn" id="btnSwitchTrack" title="Select a video or photo clip on the Video or PIP track" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        Switch
+      </button>
+      <button class="btn" id="btnBackground" title="Set what fills the frame around this clip (blur, color, or an image) — select a clip on the Video track" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6" opacity=".5"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/></svg>
+        Background
       </button>
       <button class="btn" id="btnAddText" title="Add a text layer at the playhead">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg>
@@ -1158,6 +1239,37 @@
   </div>
 </div>
 
+<!-- background editor popover: fills the letterbox area behind a clip on the Video track,
+     instead of a separate background timeline/track (blur / color / custom image) -->
+<div id="backgroundPopover">
+  <div class="tp-head"><span>Background</span><button type="button" class="tp-close" id="bgClose">✕</button></div>
+  <div class="tp-sub" id="bgSub"></div>
+  <div class="tp-grid" id="bgGrid"></div>
+  <div class="bg-sub-panel" id="bgBlurPanel" style="display:none;">
+    <div class="bg-row">
+      <label>Blur</label>
+      <input type="range" id="bgBlurSlider" min="4" max="60" value="30">
+      <span class="insp-val" id="bgBlurVal">30px</span>
+    </div>
+    <div class="bg-hint">Uses a zoomed, blurred copy of this clip to fill the frame — like InShot's blurred background.</div>
+  </div>
+  <div class="bg-sub-panel" id="bgColorPanel" style="display:none;">
+    <div class="bg-row">
+      <label>Color</label>
+      <input type="color" id="bgColorInput" value="#0a0a0a">
+    </div>
+  </div>
+  <div class="bg-sub-panel" id="bgImagePanel" style="display:none;">
+    <div class="bg-image-preview" id="bgImagePreview"></div>
+    <div class="bg-row">
+      <button type="button" class="btn" id="btnBgImagePick" style="flex:1;">Choose Image</button>
+      <button type="button" class="btn danger-ghost" id="btnBgImageClear" title="Remove background image">✕</button>
+    </div>
+    <input type="file" id="bgImageFileInput" accept="image/*" style="display:none">
+    <div class="bg-hint">The image fills the frame behind this clip, cropped to cover the canvas.</div>
+  </div>
+</div>
+
 <!-- guide / instructions modal -->
 <div id="guideOverlay">
   <div class="guide-modal">
@@ -1181,6 +1293,7 @@
         <li>Add <b>zoom/pan animations</b> with an adjustable length slider from the clip properties panel.</li>
         <li>Apply transitions between adjacent clips using the transition toolbar button.</li>
         <li>Use the crop tool overlay on the canvas to reframe a clip.</li>
+        <li>Fill the space around a clip that doesn't cover the whole frame with a blur, color, or custom image using the <b>Background</b> toolbar button (Video track clips only).</li>
       </ul>
       <h4>Timeline Actions</h4>
       <ul>
@@ -1917,8 +2030,60 @@ $('#keyframeProperty').addEventListener('change',()=>{const f=findClip(state.sel
 $('#btnAddKeyframe').addEventListener('click',addOrUpdateKeyframe);
 $('#btnDeleteKeyframe').addEventListener('click',deleteCurrentKeyframe);
 
-function drawContain(source, sw, sh, crop, fx){
+// Fills the full canvas behind a contain-fitted clip — blur (a zoomed/blurred copy of the
+// clip itself), a solid color, or a custom image — instead of the default black letterbox.
+// This is a per-clip property applied at render time, not a separate background track/timeline.
+let bgImgCache = {}; // clip.id -> { url, img }
+function getBgCustomImage(clip, bg){
+  if (!bg || !bg.imageDataUrl) return null;
+  let entry = bgImgCache[clip.id];
+  if (!entry || entry.url !== bg.imageDataUrl){
+    const img = new Image();
+    img.src = bg.imageDataUrl;
+    entry = { url: bg.imageDataUrl, img };
+    bgImgCache[clip.id] = entry;
+  }
+  return (entry.img.complete && entry.img.naturalWidth) ? entry.img : null;
+}
+function paintCoverFill(source, sw, sh, cw, ch, blurPx){
+  if (!source || !sw || !sh) return;
+  const scale = Math.max(cw/sw, ch/sh) * 1.12; // slight overscan so blur never reveals an edge
+  const w = sw*scale, h = sh*scale;
+  const x = (cw-w)/2, y = (ch-h)/2;
+  ctx.save();
+  if (blurPx) ctx.filter = `blur(${blurPx}px)`;
+  try{ ctx.drawImage(source, x, y, w, h); }catch(e){}
+  ctx.restore();
+}
+function paintClipBackground(clip, source, sw, sh, crop, bg, cw, ch){
+  if (!bg || !bg.type || bg.type==='none') return;
+  if (bg.type==='color'){
+    ctx.save();
+    ctx.fillStyle = bg.color || '#0a0a0a';
+    ctx.fillRect(0,0,cw,ch);
+    ctx.restore();
+    return;
+  }
+  if (bg.type==='blur'){
+    if (!source || !sw || !sh) return;
+    let sx=0, sy=0, sWidth=sw, sHeight=sh;
+    if (crop){ sWidth=Math.max(1,crop.w*sw); sHeight=Math.max(1,crop.h*sh); sx=crop.x*sw; sy=crop.y*sh; }
+    // draw the (possibly cropped) source region cover-fit and blurred
+    const c = document.createElement('canvas');
+    c.width = sWidth; c.height = sHeight;
+    try{ c.getContext('2d').drawImage(source, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight); }catch(e){ return; }
+    paintCoverFill(c, sWidth, sHeight, cw, ch, bg.blurAmount ?? 30);
+    return;
+  }
+  if (bg.type==='image'){
+    const img = getBgCustomImage(clip, bg);
+    if (img) paintCoverFill(img, img.naturalWidth, img.naturalHeight, cw, ch, 0);
+    return;
+  }
+}
+function drawContain(source, sw, sh, crop, fx, clip){
   clearCanvas();
+  if (fx && fx.background) paintClipBackground(clip, source, sw, sh, crop, fx.background, canvas.width, canvas.height);
   if (!sw || !sh) return;
   const cw = canvas.width, ch = canvas.height;
   let sx=0, sy=0, sWidth=sw, sHeight=sh;
@@ -1927,24 +2092,49 @@ function drawContain(source, sw, sh, crop, fx){
     sx = crop.x*sw; sy = crop.y*sh;
   }
   const scale = Math.min(cw/sWidth, ch/sHeight);
-  const w = sWidth*scale, h = sHeight*scale;
-  const x = (cw-w)/2, y = (ch-h)/2;
+  let w = sWidth*scale, h = sHeight*scale;
+  let x = (cw-w)/2, y = (ch-h)/2;
+  if (fx && fx.canvasFit){
+    const cf = fx.canvasFit;
+    const cfScale = cf.scale ?? 1;
+    w *= cfScale; h *= cfScale;
+    x = (cw-w)/2 + (cf.offsetX ?? 0)*cw;
+    y = (ch-h)/2 + (cf.offsetY ?? 0)*ch;
+  }
   const { dx, dy, dw, dh } = (fx && fx.anim) ? animatedRect(fx.anim, fx.animElapsed, x, y, w, h) : { dx:x, dy:y, dw:w, dh:h };
-  ctx.save();
+
+  const mask = clip && clip.mask;
+  const maskActive = maskIsActive(mask);
+  let targetCtx = ctx;
+  if (maskActive){
+    if (!maskContentScratchCanvas) maskContentScratchCanvas = document.createElement('canvas');
+    if (maskContentScratchCanvas.width !== cw) maskContentScratchCanvas.width = cw;
+    if (maskContentScratchCanvas.height !== ch) maskContentScratchCanvas.height = ch;
+    targetCtx = maskContentScratchCanvas.getContext('2d');
+    targetCtx.clearRect(0, 0, cw, ch);
+  }
+
+  targetCtx.save();
   if (fx){
-    ctx.globalAlpha = clamp((fx.opacity ?? 100)/100, 0, 1);
-    if (fx.blur) ctx.filter = `blur(${fx.blur}px)`;
+    targetCtx.globalAlpha = clamp((fx.opacity ?? 100)/100, 0, 1);
+    if (fx.blur) targetCtx.filter = `blur(${fx.blur}px)`;
   }
   if (fx && fx.rotation){
     const cx = dx+dw/2, cy = dy+dh/2;
-    ctx.translate(cx, cy);
-    ctx.rotate(fx.rotation*Math.PI/180);
-    ctx.translate(-cx, -cy);
+    targetCtx.translate(cx, cy);
+    targetCtx.rotate(fx.rotation*Math.PI/180);
+    targetCtx.translate(-cx, -cy);
   }
-  try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
-  ctx.restore();
-  if (fx) applyColorFxToRect(fx.curves, fx.hsl, dx, dy, dw, dh);
+  try{ targetCtx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
+  targetCtx.restore();
+  if (fx) applyColorFxToRect(fx.curves, fx.hsl, dx, dy, dw, dh, targetCtx);
+
+  if (maskActive){
+    applyMaskToCanvas(mask, dx, dy, dw, dh, maskContentScratchCanvas);
+    ctx.drawImage(maskContentScratchCanvas, 0, 0);
+  }
 }
+let maskContentScratchCanvas = null;
 function drawTextOverlay(clip){
   if (!clip) return;
   const kfv = getAnimatedClipValues(clip,state.playhead);
@@ -2033,28 +2223,54 @@ function drawPipOverlay(clip, sourceOverride=null){
   ctx.save();
   ctx.shadowColor = 'rgba(0,0,0,.5)';
   ctx.shadowBlur = 14;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(box.x, box.y, box.w, box.h);
-  ctx.clip(); // keep any pan/zoom animation contained within the PIP box
-  ctx.globalAlpha = clamp((kfv.opacity ?? clip.opacity ?? 100)/100, 0, 1);
-  if (kfv.blur) ctx.filter = `blur(${kfv.blur}px)`;
+
+  // If this PIP clip has a shape mask, render its pixels into an offscreen buffer first so we
+  // can punch the mask's alpha into them, then composite that onto the main canvas — which
+  // already has the main Video track painted beneath it. Wherever the mask cuts the PIP away,
+  // that main-video layer shows straight through (see applyMaskToCanvas doc comment above).
+  const mask = clip.mask;
+  const maskActive = maskIsActive(mask);
+  let targetCtx = ctx;
+  if (maskActive){
+    if (!maskContentScratchCanvas) maskContentScratchCanvas = document.createElement('canvas');
+    if (maskContentScratchCanvas.width !== canvas.width) maskContentScratchCanvas.width = canvas.width;
+    if (maskContentScratchCanvas.height !== canvas.height) maskContentScratchCanvas.height = canvas.height;
+    targetCtx = maskContentScratchCanvas.getContext('2d');
+    targetCtx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.rect(box.x, box.y, box.w, box.h);
+  targetCtx.clip(); // keep any pan/zoom animation contained within the PIP box
+  targetCtx.globalAlpha = clamp((kfv.opacity ?? clip.opacity ?? 100)/100, 0, 1);
+  if (kfv.blur) targetCtx.filter = `blur(${kfv.blur}px)`;
   if (clip.rotation){
     const rcx = dx+dw/2, rcy = dy+dh/2;
-    ctx.translate(rcx, rcy);
-    ctx.rotate(clip.rotation*Math.PI/180);
-    ctx.translate(-rcx, -rcy);
+    targetCtx.translate(rcx, rcy);
+    targetCtx.rotate(clip.rotation*Math.PI/180);
+    targetCtx.translate(-rcx, -rcy);
   }
   if (chromaIsActive(clip.chroma)){
     const keyed = chromaKeyedCanvas(source, sx, sy, sWidth, sHeight, dw, dh, clip.chroma);
-    try{ if (keyed) ctx.drawImage(keyed, dx, dy, dw, dh); }catch(e){}
+    try{ if (keyed) targetCtx.drawImage(keyed, dx, dy, dw, dh); }catch(e){}
   } else {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(box.x, box.y, box.w, box.h);
-    try{ ctx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
+    // Skip the opaque black backdrop when masking — leaving it out lets the main video show
+    // through the letterboxed/transparent parts of the box once the mask alpha is applied.
+    if (!maskActive){
+      targetCtx.fillStyle = '#000';
+      targetCtx.fillRect(box.x, box.y, box.w, box.h);
+    }
+    try{ targetCtx.drawImage(source, sx, sy, sWidth, sHeight, dx, dy, dw, dh); }catch(e){}
   }
-  ctx.restore();
-  applyColorFxToRect(clip.curves, clip.hsl, dx, dy, dw, dh);
+  targetCtx.restore();
+  applyColorFxToRect(clip.curves, clip.hsl, dx, dy, dw, dh, targetCtx);
+
+  if (maskActive){
+    applyMaskToCanvas(mask, box.x, box.y, box.w, box.h, maskContentScratchCanvas);
+    ctx.drawImage(maskContentScratchCanvas, 0, 0);
+  }
+
   ctx.shadowBlur = 0;
   ctx.strokeStyle = 'rgba(255,255,255,.6)';
   ctx.lineWidth = 2;
@@ -2381,13 +2597,13 @@ function renderFrame(time){
         previewVideoEl.volume = clamp((vkf.volume ?? vClip.volume ?? 100)/100, 0, 1) * audioFadeFactor(vClip,time);
         if (state.isPlaying){ if (previewVideoEl.paused) previewVideoEl.play().catch(()=>{}); }
         else { if (!previewVideoEl.paused) previewVideoEl.pause(); }
-        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
+        drawContain(previewVideoEl, previewVideoEl.videoWidth, previewVideoEl.videoHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, canvasFit:vClip.canvasFit, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start, background:vClip.background}, vClip);
       } else if (vClip.type === 'image' && media){
         if (!previewVideoEl.paused) previewVideoEl.pause();
         currentVideoClipId = vClip.id;
         let img = imgCache[media.id];
         if (!img){ img = new Image(); img.src = media.url; imgCache[media.id]=img; }
-        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start});
+        if (img.complete && img.naturalWidth) drawContain(img, img.naturalWidth, img.naturalHeight, vClip.crop, {opacity:getAnimatedClipValues(vClip,time).opacity, blur:getAnimatedClipValues(vClip,time).blur, rotation:vClip.rotation, canvasFit:vClip.canvasFit, curves:vClip.curves, hsl:vClip.hsl, anim:vClip.anim, animElapsed: time-vClip.start, background:vClip.background}, vClip);
         else clearCanvas();
       }
     } else {
@@ -2500,7 +2716,12 @@ canvas.addEventListener('mousemove', e=>{
   const scaleX = canvas.width/rect.width, scaleY = canvas.height/rect.height;
   const p = { x:(e.clientX-rect.left)*scaleX, y:(e.clientY-rect.top)*scaleY };
   const hit = topmostPipAtPoint(activePipsAt(state.playhead), p.x, p.y);
-  if (!hit){ canvas.style.cursor = ''; return; }
+  if (!hit){
+    const vClipHover = activeClipAt('video', state.playhead);
+    const canDragCanvas = vClipHover && (vClipHover.type==='video' || vClipHover.type==='image') && state.selectedClipId===vClipHover.id;
+    canvas.style.cursor = canDragCanvas ? 'move' : '';
+    return;
+  }
   canvas.style.cursor = hit.hitMode ? PIP_CURSOR_MAP[hit.hitMode] : 'move';
 });
 
@@ -2523,27 +2744,36 @@ canvas.addEventListener('mousedown', e=>{
   }
 
   const tClip = activeClipAt('text', state.playhead);
-  if (!tClip) return;
-  e.preventDefault();
-  selectClip(tClip.id);
-  let pushed = false;
-  const toNorm = ev => ({
-    x: clamp((ev.clientX-rect.left)*scaleX/canvas.width, 0, 1),
-    y: clamp((ev.clientY-rect.top)*scaleY/canvas.height, 0, 1)
-  });
-  const onMove = ev=>{
-    if (!pushed){ pushHistory(); pushed = true; }
-    tClip.position = toNorm(ev);
-    if(tClip.keyframes&&tClip.keyframes.textPosition&&tClip.keyframes.textPosition.length) upsertKeyframe(tClip,'textPosition',localClipTime(tClip,state.playhead),tClip.position);
-    scheduleInteractivePreview();
-  };
-  const onUp = ()=>{
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    if (pushed) { renderTimeline(); renderFrame(state.playhead); }
-  };
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  if (tClip){
+    e.preventDefault();
+    selectClip(tClip.id);
+    let pushed = false;
+    const toNorm = ev => ({
+      x: clamp((ev.clientX-rect.left)*scaleX/canvas.width, 0, 1),
+      y: clamp((ev.clientY-rect.top)*scaleY/canvas.height, 0, 1)
+    });
+    const onMove = ev=>{
+      if (!pushed){ pushHistory(); pushed = true; }
+      tClip.position = toNorm(ev);
+      if(tClip.keyframes&&tClip.keyframes.textPosition&&tClip.keyframes.textPosition.length) upsertKeyframe(tClip,'textPosition',localClipTime(tClip,state.playhead),tClip.position);
+      scheduleInteractivePreview();
+    };
+    const onUp = ()=>{
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      if (pushed) { renderTimeline(); renderFrame(state.playhead); }
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return;
+  }
+
+  // ---- free-drag reposition for the selected main-track video/image clip (Canvas Zoom tool) ----
+  const vClipHit = activeClipAt('video', state.playhead);
+  if (vClipHit && (vClipHit.type==='video' || vClipHit.type==='image') && state.selectedClipId===vClipHit.id){
+    e.preventDefault();
+    startCanvasFitDrag(vClipHit, e, rect);
+  }
 });
 
 /* Snaps a value to 0, 1, or the given box's own centerline when it lands within a few CSS
@@ -2578,6 +2808,26 @@ function startPipMove(clip, e, rect){
     document.removeEventListener('mousemove', onMove);
     document.removeEventListener('mouseup', onUp);
     if (pushed) renderTimeline();
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+/* free-drag reposition for the Canvas Zoom tool — the main video/image clip is allowed to float
+   anywhere (including past the canvas edges), unlike the PIP box which is clamped to 0..1 */
+function startCanvasFitDrag(clip, e, rect){
+  let pushed = false;
+  const startClientX = e.clientX, startClientY = e.clientY;
+  const orig = { ...ensureCanvasFit(clip) };
+  const onMove = ev=>{
+    if (!pushed){ pushHistory(); pushed = true; }
+    const dx = (ev.clientX-startClientX)/rect.width;
+    const dy = (ev.clientY-startClientY)/rect.height;
+    clip.canvasFit = { scale: orig.scale, offsetX: orig.offsetX+dx, offsetY: orig.offsetY+dy };
+    renderFrame(state.playhead);
+  };
+  const onUp = ()=>{
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
   };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
@@ -3053,6 +3303,8 @@ function selectClip(id){
   refreshSelectionClasses();
   renderInspector();
   refreshTransitionButtonState();
+  refreshBackgroundButtonState();
+  refreshSwitchButtonState();
 }
 function toggleMultiSelect(id){
   if (state.selectedClipIds.has(id)){
@@ -3096,6 +3348,8 @@ function setInspectorPanelOpen(open){
   }
 }
 function renderInspector(){
+  refreshBackgroundButtonState();
+  refreshSwitchButtonState();
   const insp = $('#inspector');
   if (cropState && cropState.clip.id !== state.selectedClipId) exitCropMode();
 
@@ -3103,7 +3357,7 @@ function renderInspector(){
     setInspectorPanelOpen(true);
     insp.classList.add('show');
     $('#inspTitle').textContent = `${state.selectedClipIds.size} clips selected — Delete or Ripple-delete applies to all`;
-    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldRotation','fieldCurves','fieldHSL','fieldChroma','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
+    ['fieldSpeed','fieldDuration','fieldVolume','fieldAudioFades','fieldOpacity','fieldBlur','fieldRotation','fieldCanvasFit','fieldCurves','fieldHSL','fieldChroma','fieldMask','fieldAnim','fieldKeyframes','fieldCrop','fieldText','fieldPipHint'].forEach(id=> $('#'+id).style.display='none');
     return;
   }
   const found = state.selectedClipId ? findClip(state.selectedClipId) : null;
@@ -3122,12 +3376,14 @@ function renderInspector(){
   const showOpacity = clip.type==='video' || clip.type==='image';
   const showBlur = clip.type==='video' || clip.type==='image';
   const showRotation = clip.type==='video' || clip.type==='image';
+  const showCanvasFit = (clip.type==='video' || clip.type==='image') && track==='video';
   const showCurves = clip.type==='video' || clip.type==='image';
   const showHSL = clip.type==='video' || clip.type==='image';
   const showAnim = clip.type==='video' || clip.type==='image';
   const showText = clip.type==='text';
   const showPipHint = track==='pip';
   const showChroma = track==='pip' && (clip.type==='video' || clip.type==='image');
+  const showMask = (track==='video' || track==='pip') && (clip.type==='video' || clip.type==='image');
   const showKeyframes = keyframePropsFor(clip,track).length>0;
   $('#fieldSpeed').style.display = showSpeed ? 'flex':'none';
   $('#fieldDuration').style.display = showDuration ? 'flex':'none';
@@ -3136,6 +3392,7 @@ function renderInspector(){
   $('#fieldOpacity').style.display = showOpacity ? 'flex':'none';
   $('#fieldBlur').style.display = showBlur ? 'flex':'none';
   $('#fieldRotation').style.display = showRotation ? 'flex':'none';
+  $('#fieldCanvasFit').style.display = showCanvasFit ? 'flex':'none';
   $('#fieldCurves').style.display = showCurves ? 'flex':'none';
   $('#fieldHSL').style.display = showHSL ? 'flex':'none';
   $('#fieldAnim').style.display = showAnim ? 'flex':'none';
@@ -3144,6 +3401,7 @@ function renderInspector(){
   $('#fieldText').style.display = showText ? 'flex':'none';
   $('#fieldPipHint').style.display = showPipHint ? 'block':'none';
   $('#fieldChroma').style.display = showChroma ? 'flex':'none';
+  $('#fieldMask').style.display = showMask ? 'flex':'none';
 
   if (showSpeed){
     const presets = ['0.25','0.5','0.75','1','1.25','1.5','2','4'];
@@ -3186,6 +3444,12 @@ function renderInspector(){
     $('#rotationSlider').value = rot;
     $('#rotationVal').textContent = Math.round(rot) + '°';
   }
+  if (showCanvasFit){
+    const cf = clip.canvasFit || { scale:1, offsetX:0, offsetY:0 };
+    const pct = Math.round((cf.scale ?? 1)*100);
+    $('#canvasZoomSlider').value = pct;
+    $('#canvasZoomVal').textContent = pct + '%';
+  }
   if (showCurves){
     if (curvesEditorClipId !== clip.id){ curvesEditorClipId = clip.id; curvesChannel = 'master'; }
     syncCurvesTabs();
@@ -3205,6 +3469,20 @@ function renderInspector(){
     $('#chromaSoftnessVal').textContent = chroma.softness;
     $('#chromaSpill').value = chroma.spill;
     $('#chromaSpillVal').textContent = chroma.spill;
+  }
+  if (showMask){
+    const mask = clip.mask || defaultMask();
+    $('#maskEnabled').checked = !!mask.enabled;
+    $('#maskControls').style.display = mask.enabled ? 'flex' : 'none';
+    $('#maskShape').value = mask.shape;
+    $('#maskSize').value = mask.size;
+    $('#maskSizeVal').textContent = mask.size + '%';
+    $('#maskFeather').value = mask.feather;
+    $('#maskFeatherVal').textContent = mask.feather;
+    $('#maskInvert').checked = !!mask.invert;
+    $('#maskHint').textContent = track==='pip'
+      ? "Cuts this PIP clip into the shape — the masked-out area shows the main video underneath."
+      : "Cuts this clip into the shape — the masked-out area shows this clip's background (Background button).";
   }
   if (showAnim){
     const anim = clip.anim || { type:'none', length: Math.min(3, clipDuration(clip)) };
@@ -3368,6 +3646,29 @@ $('#btnRotateReset').addEventListener('click', ()=>{
   renderFrame(state.playhead); renderTimeline();
 });
 
+/* ---- canvas fit (manual zoom + free-drag positioning within the project's aspect ratio) ---- */
+function ensureCanvasFit(clip){
+  if (!clip.canvasFit) clip.canvasFit = { scale:1, offsetX:0, offsetY:0 };
+  return clip.canvasFit;
+}
+$('#canvasZoomSlider').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId);
+  if (!found) return;
+  const cf = ensureCanvasFit(found.clip);
+  cf.scale = parseInt(e.target.value,10)/100;
+  $('#canvasZoomVal').textContent = Math.round(cf.scale*100) + '%';
+  renderFrame(state.playhead);
+});
+$('#canvasZoomSlider').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#btnCanvasReset').addEventListener('click', ()=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  found.clip.canvasFit = { scale:1, offsetX:0, offsetY:0 };
+  $('#canvasZoomSlider').value = 100;
+  $('#canvasZoomVal').textContent = '100%';
+  renderFrame(state.playhead); renderTimeline();
+});
+
 /* ---- chroma key controls ---- */
 $('#chromaEnabled').addEventListener('change', e=>{
   const found = findClip(state.selectedClipId); if (!found) return;
@@ -3403,6 +3704,41 @@ $('#chromaSpill').addEventListener('input', e=>{
   renderFrame(state.playhead);
 });
 $('#chromaSpill').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+
+/* ---- mask controls ---- */
+$('#maskEnabled').addEventListener('change', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  ensureMask(found.clip).enabled = e.target.checked;
+  $('#maskControls').style.display = e.target.checked ? 'flex' : 'none';
+  renderFrame(state.playhead); renderTimeline();
+});
+$('#maskShape').addEventListener('change', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  ensureMask(found.clip).shape = e.target.value;
+  renderFrame(state.playhead); renderTimeline();
+});
+$('#maskSize').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureMask(found.clip).size = parseInt(e.target.value,10);
+  $('#maskSizeVal').textContent = e.target.value + '%';
+  renderFrame(state.playhead);
+});
+$('#maskSize').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#maskFeather').addEventListener('input', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  ensureMask(found.clip).feather = parseInt(e.target.value,10);
+  $('#maskFeatherVal').textContent = e.target.value;
+  renderFrame(state.playhead);
+});
+$('#maskFeather').addEventListener('change', ()=>{ pushHistory(); renderTimeline(); });
+$('#maskInvert').addEventListener('change', e=>{
+  const found = findClip(state.selectedClipId); if (!found) return;
+  pushHistory();
+  ensureMask(found.clip).invert = e.target.checked;
+  renderFrame(state.playhead); renderTimeline();
+});
 
 let chromaPickArmed = false;
 $('#btnChromaPick').addEventListener('click', ()=>{
@@ -3727,6 +4063,100 @@ function chromaKeyedCanvas(source, sx, sy, sWidth, sHeight, dw, dh, chroma){
   sctx.putImageData(imgData, 0, 0);
   return scratch;
 }
+
+/* ---- mask (InShot-style shape mask) -----------------------------------------------------
+   Cuts a clip into a shape (rect/circle/triangle/star/heart). Because both the Video track
+   and the PIP track are painted onto the SAME canvas, one on top of the other, all this needs
+   to do is punch real alpha transparency into the clip's own pixels before they're composited:
+   whatever was already drawn underneath then shows through automatically —
+     - mask on the main Video track clip -> reveals that clip's background fill (or black)
+     - mask on a PIP clip -> reveals the main video track underneath it
+   No separate "layer below" lookup is needed; it falls out of draw order for free. */
+function defaultMask(){ return { enabled:false, shape:'circle', size:90, feather:8, invert:false }; }
+function ensureMask(clip){
+  if (!clip.mask) clip.mask = defaultMask();
+  return clip.mask;
+}
+function maskIsActive(mask){ return !!(mask && mask.enabled && mask.shape && mask.shape!=='none'); }
+// Builds a Path2D for `shape`, drawn to exactly fill a local w x h box (path coords are
+// relative to that box's own top-left, i.e. not yet translated onto the canvas).
+function maskShapePath(shape, w, h){
+  const p = new Path2D();
+  const cx = w/2, cy = h/2;
+  switch(shape){
+    case 'circle': {
+      const r = Math.min(w,h)/2;
+      p.moveTo(cx+r, cy);
+      p.arc(cx, cy, Math.max(0.01,r), 0, Math.PI*2);
+      break;
+    }
+    case 'triangle':
+      p.moveTo(cx, 0); p.lineTo(w, h); p.lineTo(0, h); p.closePath();
+      break;
+    case 'star': {
+      const spikes = 5, outerR = Math.min(w,h)/2, innerR = outerR*0.42;
+      let rot = -Math.PI/2, x, y;
+      const step = Math.PI/spikes;
+      p.moveTo(cx + Math.cos(rot)*outerR, cy + Math.sin(rot)*outerR);
+      for (let i=0;i<spikes;i++){
+        rot += step; x = cx + Math.cos(rot)*innerR; y = cy + Math.sin(rot)*innerR; p.lineTo(x,y);
+        rot += step; x = cx + Math.cos(rot)*outerR; y = cy + Math.sin(rot)*outerR; p.lineTo(x,y);
+      }
+      p.closePath();
+      break;
+    }
+    case 'heart': {
+      const top = h*0.28;
+      p.moveTo(cx, h);
+      p.bezierCurveTo(-w*0.1, h*0.62, w*0.02, top*0.15, cx, top);
+      p.bezierCurveTo(w*0.98, top*0.15, w*1.1, h*0.62, cx, h);
+      p.closePath();
+      break;
+    }
+    case 'rect':
+    default: {
+      const rr = Math.min(w,h)*0.08;
+      if (p.roundRect) p.roundRect(0, 0, w, h, rr); else p.rect(0, 0, w, h);
+      break;
+    }
+  }
+  return p;
+}
+let maskShapeScratchCanvas = null;
+// Punches `contentCanvas` (already holding the clip's fully-rendered pixels, same size as the
+// main canvas) down to just the mask shape, sized/centered within rect (x,y,w,h) — the clip's
+// own displayed rect (its contain-fit rect on Video, or its box on PIP). Feather softens the
+// shape's edge via blur before it's used as an alpha stencil; invert flips which side is kept.
+function applyMaskToCanvas(mask, rectX, rectY, rectW, rectH, contentCanvas){
+  if (!maskShapeScratchCanvas) maskShapeScratchCanvas = document.createElement('canvas');
+  const shapeC = maskShapeScratchCanvas;
+  if (shapeC.width !== contentCanvas.width) shapeC.width = contentCanvas.width;
+  if (shapeC.height !== contentCanvas.height) shapeC.height = contentCanvas.height;
+  const sctx = shapeC.getContext('2d');
+  sctx.clearRect(0, 0, shapeC.width, shapeC.height);
+  const feather = clamp(mask.feather ?? 0, 0, 60);
+  const sizeFrac = clamp((mask.size ?? 90)/100, 0.05, 1.5);
+  const shapeW = Math.max(1, rectW*sizeFrac), shapeH = Math.max(1, rectH*sizeFrac);
+  const shapeX = rectX + (rectW-shapeW)/2, shapeY = rectY + (rectH-shapeH)/2;
+  sctx.save();
+  if (feather>0) sctx.filter = `blur(${feather}px)`;
+  sctx.translate(shapeX, shapeY);
+  sctx.fillStyle = '#fff';
+  sctx.fill(maskShapePath(mask.shape, shapeW, shapeH));
+  sctx.restore();
+  if (mask.invert){
+    sctx.save();
+    sctx.globalCompositeOperation = 'source-out';
+    sctx.fillStyle = '#fff';
+    sctx.fillRect(0, 0, shapeC.width, shapeC.height);
+    sctx.restore();
+  }
+  const cctx = contentCanvas.getContext('2d');
+  cctx.save();
+  cctx.globalCompositeOperation = 'destination-in';
+  cctx.drawImage(shapeC, 0, 0);
+  cctx.restore();
+}
 function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 function rgbToHsl(r,g,b){
   r/=255; g/=255; b/=255;
@@ -3801,7 +4231,7 @@ function hslPreviewRGB(r,g,b,hsl){
   return out;
 }
 
-function applyColorFxToRect(curves, hsl, x, y, w, h){
+function applyColorFxToRect(curves, hsl, x, y, w, h, targetCtx=ctx){
   const hasCurves = curves && !curvesAreIdentity(curves);
   const hasHSL = hsl && !hslIsIdentity(hsl);
   if (!hasCurves && !hasHSL) return;
@@ -3810,7 +4240,7 @@ function applyColorFxToRect(curves, hsl, x, y, w, h){
   const rh = Math.min(canvas.height - ry, Math.ceil(h));
   if (rw<=0 || rh<=0) return;
   let imgData;
-  try{ imgData = ctx.getImageData(rx, ry, rw, rh); }catch(e){ return; }
+  try{ imgData = targetCtx.getImageData(rx, ry, rw, rh); }catch(e){ return; }
   const d = imgData.data;
   const lut = hasCurves ? combinedCurveLUTs(curves) : null;
   for (let i=0; i<d.length; i+=4){
@@ -3821,7 +4251,7 @@ function applyColorFxToRect(curves, hsl, x, y, w, h){
     }
     d[i]=r; d[i+1]=g; d[i+2]=b;
   }
-  ctx.putImageData(imgData, rx, ry);
+  targetCtx.putImageData(imgData, rx, ry);
 }
 
 const HSL_SWEEP_DEG = 135; // saturation/lightness knobs sweep -135..+135, leaving a dead zone at the bottom
@@ -4393,6 +4823,139 @@ function duplicateSelectedClip(){
   showToast('Clip duplicated.', 'success');
 }
 
+/* ---- replace clip content with a different file from the device ---- */
+const replaceFileInputEl = $('#replaceFileInput');
+function triggerReplaceClip(){
+  if (state.selectedClipIds.size !== 1){
+    showToast(state.selectedClipIds.size>1 ? 'Select exactly one clip to replace.' : 'Select a clip first.', 'error');
+    return;
+  }
+  const found = findClip(state.selectedClipId);
+  if (!found) return;
+  const { clip } = found;
+  if (clip.type !== 'video' && clip.type !== 'image' && clip.type !== 'audio'){
+    showToast('Only video, photo, and audio clips can be replaced.', 'error');
+    return;
+  }
+  replaceFileInputEl.accept = clip.type==='video' ? 'video/*' : clip.type==='image' ? 'image/*' : 'audio/*';
+  replaceFileInputEl.dataset.clipId = clip.id;
+  replaceFileInputEl.click();
+}
+replaceFileInputEl.addEventListener('change', e=>{
+  const file = e.target.files && e.target.files[0];
+  const clipId = replaceFileInputEl.dataset.clipId;
+  replaceFileInputEl.value = '';
+  if (!file || !clipId) return;
+  const found = findClip(clipId);
+  if (!found){ showToast('That clip no longer exists.', 'error'); return; }
+  replaceClipMedia(found.clip, file);
+});
+function replaceClipMedia(clip, file){
+  let type = null;
+  if (file.type.startsWith('video/')) type='video';
+  else if (file.type.startsWith('audio/')) type='audio';
+  else if (file.type.startsWith('image/')) type='image';
+  else { showToast(`Unsupported file: ${file.name}`, 'error'); return; }
+  if (type !== clip.type){
+    showToast(`This clip needs a ${clip.type} file — you picked a ${type} file.`, 'error');
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const mediaObj = { id: uid(), name: file.name, type, url, duration: 5, thumb: null };
+  function finalizeReplace(){
+    pushHistory();
+    clip.mediaId = mediaObj.id;
+    if (type === 'video' || type === 'audio'){
+      const desiredDur = clipDuration(clip);
+      const maxOut = mediaObj.duration || desiredDur*clip.speed;
+      clip.inPoint = 0;
+      clip.outPoint = clamp(desiredDur*clip.speed, 0.05, maxOut);
+    }
+    renderTimeline(); renderInspector(); renderFrame(state.playhead);
+    showToast('Clip content replaced.', 'success');
+  }
+  state.media.push(mediaObj);
+  cacheMediaForAutosave(mediaObj);
+  if (type === 'image'){
+    mediaObj.thumb = url;
+    renderMediaList();
+    finalizeReplace();
+  } else {
+    const probe = document.createElement(type === 'video' ? 'video' : 'audio');
+    probe.preload = 'metadata';
+    probe.src = url;
+    probe.addEventListener('loadedmetadata', ()=>{
+      mediaObj.duration = isFinite(probe.duration) ? probe.duration : 10;
+      if (type === 'video') generateThumb(mediaObj, ()=> renderMediaList());
+      else renderMediaList();
+      finalizeReplace();
+    }, { once:true });
+    probe.addEventListener('error', ()=>{
+      mediaObj.duration = 10;
+      renderMediaList();
+      finalizeReplace();
+    }, { once:true });
+  }
+}
+
+/* ---- switch a clip between the Video and PIP tracks, keeping its timing where possible ---- */
+function getSwitchTargetForSelection(){
+  if (state.selectedClipIds.size !== 1) return null;
+  const found = findClip(state.selectedClipId);
+  if (!found) return null;
+  const { clip, track } = found;
+  if (track !== 'video' && track !== 'pip') return null;
+  if (clip.type !== 'video' && clip.type !== 'image') return null;
+  return { clip, track, target: track==='video' ? 'pip' : 'video' };
+}
+function switchClipTrack(clipId){
+  const found = findClip(clipId);
+  if (!found) return;
+  const { clip, track } = found;
+  if (track !== 'video' && track !== 'pip'){
+    showToast('Only clips on the Video or PIP track can be switched.', 'error');
+    return;
+  }
+  if (clip.type !== 'video' && clip.type !== 'image'){
+    showToast('Only video and photo clips can be switched.', 'error');
+    return;
+  }
+  const target = track === 'video' ? 'pip' : 'video';
+  const dur = clipDuration(clip);
+  let start = clip.start;
+  if (overlapsAny(target, start, dur, null)){
+    const free = findFreeSlot(target, start, dur, null);
+    if (free == null){
+      showToast(`No free space on the ${target==='pip' ? 'PIP' : 'Video'} track to switch this clip to.`, 'error');
+      return;
+    }
+    start = Math.round(free*1000)/1000;
+  }
+  pushHistory();
+  state.tracks[track] = state.tracks[track].filter(c=>c.id!==clip.id);
+  clip.start = start;
+  delete clip.transitionOut; // an in/out transition is tied to whichever clip is now adjacent on the OLD track
+  if (target==='pip' && !clip.pipBox) clip.pipBox = { x:0.62, y:0.62, w:0.28, h:0.28 };
+  state.tracks[target].push(clip);
+  renderTimeline(); renderInspector(); renderFrame(state.playhead);
+  refreshTransitionButtonState();
+  showToast(`Switched to the ${target==='pip' ? 'PIP' : 'Video'} track.`, 'success');
+}
+function switchSelectedClipTrack(){
+  const info = getSwitchTargetForSelection();
+  if (!info){ showToast('Select a video or photo clip on the Video or PIP track.', 'error'); return; }
+  switchClipTrack(info.clip.id);
+}
+const btnSwitchTrackEl = $('#btnSwitchTrack');
+function refreshSwitchButtonState(){
+  const info = getSwitchTargetForSelection();
+  btnSwitchTrackEl.disabled = !info;
+  btnSwitchTrackEl.title = info
+    ? `Switch this clip to the ${info.target==='pip' ? 'PIP' : 'Video'} track`
+    : 'Select a video or photo clip on the Video or PIP track';
+}
+btnSwitchTrackEl.addEventListener('click', switchSelectedClipTrack);
+
 function pasteClipAt(trackType, time){
   if (!state.clipboard){ showToast('Clipboard is empty.', 'error'); return; }
   if (state.clipboard.trackType !== trackType){
@@ -4442,6 +5005,7 @@ $('#btnCut').addEventListener('click', ()=>{
   else showToast(state.selectedClipIds.size>1 ? 'Select exactly one clip to cut.' : 'Select a clip first.','error');
 });
 $('#btnDuplicate').addEventListener('click', duplicateSelectedClip);
+$('#btnReplace').addEventListener('click', triggerReplaceClip);
 $('#btnUndo').addEventListener('click', undo);
 $('#btnRedo').addEventListener('click', redo);
 
@@ -4690,7 +5254,7 @@ async function openProjectFromDisk(){
       if ($('#aspectSelect').querySelector(`option[value="${opt}"]`)) $('#aspectSelect').value = opt;
     }
     state.selectedClipId = null; state.selectedClipIds = new Set();
-    state.playhead = 0; imgCache = {};
+    state.playhead = 0; imgCache = {}; bgImgCache = {};
     undoStack = []; redoStack = []; updateHistoryButtons();
     renderMediaList(); renderTimeline(); renderInspector(); renderFrame(0);
     autosaveSession('project-open');
@@ -4753,7 +5317,7 @@ function newProject(){
   state.tracks = { video:[], audio:[], text:[], pip:[] };
   state.selectedClipId = null; state.selectedClipIds = new Set();
   state.playhead = 0; state.previewMode = 'timeline'; state.activeMediaId = null; state.assetPreviewId = null;
-  imgCache = {};
+  imgCache = {}; bgImgCache = {};
   undoStack = []; redoStack = []; updateHistoryButtons();
   previewLabel.classList.remove('show');
   clearCanvas();
@@ -4882,6 +5446,150 @@ btnTransitionEl.addEventListener('click', e=>{
 });
 document.addEventListener('click', closeTransitionPopover);
 refreshTransitionButtonState();
+
+/* ===================== BACKGROUND UI (toolbar button + popover) =====================
+   Fills the frame around a Video-track clip (blur / color / custom image) instead of the
+   default black letterbox — a per-clip render property, not a separate timeline track. */
+const backgroundPopoverEl = $('#backgroundPopover');
+const btnBackgroundEl = $('#btnBackground');
+let backgroundPopoverTarget = null; // clip
+
+function defaultBackground(){ return { type:'none', color:'#0a0a0a', blurAmount:30, imageDataUrl:null }; }
+const BACKGROUND_TYPES = [
+  { id:'none',  label:'None'  },
+  { id:'blur',  label:'Blur'  },
+  { id:'color', label:'Color' },
+  { id:'image', label:'Image' }
+];
+function backgroundIconSvg(id){
+  const c = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+  switch(id){
+    case 'none': return `<svg ${c}><path d="M6 6l12 12M18 6L6 18"/></svg>`;
+    case 'blur': return `<svg ${c} stroke-dasharray="2 2"><circle cx="12" cy="12" r="7"/></svg>`;
+    case 'color': return `<svg ${c}><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none" opacity=".8"/></svg>`;
+    case 'image': return `<svg ${c}><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6" fill="currentColor" stroke="none"/><path d="M4 17l5-5 4 4 3-3 4 4"/></svg>`;
+    default: return '';
+  }
+}
+(function buildBackgroundGrid(){
+  const grid = $('#bgGrid');
+  grid.innerHTML = BACKGROUND_TYPES.map(t=>
+    `<button type="button" class="tp-type-btn" data-type="${t.id}">${backgroundIconSvg(t.id)}<span>${t.label}</span></button>`
+  ).join('');
+  grid.querySelectorAll('.tp-type-btn').forEach(btn=>{
+    btn.addEventListener('click', e=>{ e.stopPropagation(); applyBackgroundType(btn.dataset.type); });
+  });
+})();
+// single video/image clip selected on the Video track — where the clip is contain-fit and can
+// show letterbox space around it (matches the same eligibility as Canvas Fit in the inspector)
+function getBackgroundTargetForSelection(){
+  if (state.selectedClipIds.size !== 1) return null;
+  const found = findClip(state.selectedClipId);
+  if (!found) return null;
+  const { clip, track } = found;
+  if (track !== 'video') return null;
+  if (clip.type !== 'video' && clip.type !== 'image') return null;
+  return clip;
+}
+function refreshBackgroundButtonState(){
+  const clip = getBackgroundTargetForSelection();
+  btnBackgroundEl.disabled = !clip;
+  btnBackgroundEl.classList.toggle('primary', !!(clip && clip.background && clip.background.type && clip.background.type!=='none'));
+  if (!clip && backgroundPopoverTarget) closeBackgroundPopover();
+}
+function refreshBackgroundImagePreview(bg){
+  const el = $('#bgImagePreview');
+  el.style.backgroundImage = (bg && bg.imageDataUrl) ? `url("${bg.imageDataUrl}")` : 'none';
+}
+function openBackgroundPopover(anchorEl, clip){
+  backgroundPopoverTarget = clip;
+  const bg = clip.background || defaultBackground();
+  $('#bgSub').textContent = clipLabel(clip);
+  $('#bgGrid').querySelectorAll('.tp-type-btn').forEach(b=> b.classList.toggle('active', b.dataset.type===bg.type));
+  $('#bgBlurPanel').style.display = bg.type==='blur' ? 'flex' : 'none';
+  $('#bgColorPanel').style.display = bg.type==='color' ? 'flex' : 'none';
+  $('#bgImagePanel').style.display = bg.type==='image' ? 'flex' : 'none';
+  $('#bgBlurSlider').value = bg.blurAmount ?? 30;
+  $('#bgBlurVal').textContent = (bg.blurAmount ?? 30) + 'px';
+  $('#bgColorInput').value = bg.color || '#0a0a0a';
+  refreshBackgroundImagePreview(bg);
+  backgroundPopoverEl.style.display = 'block';
+  const r = anchorEl.getBoundingClientRect();
+  requestAnimationFrame(()=>{
+    const pr = backgroundPopoverEl.getBoundingClientRect();
+    const vw = window.innerWidth, vh = window.innerHeight;
+    let left = clamp(r.left, 8, vw-pr.width-8);
+    let top = r.bottom + 6;
+    if (top + pr.height > vh-8) top = Math.max(8, r.top - pr.height - 6);
+    backgroundPopoverEl.style.left = left+'px';
+    backgroundPopoverEl.style.top = top+'px';
+  });
+}
+function closeBackgroundPopover(){
+  backgroundPopoverEl.style.display = 'none';
+  backgroundPopoverTarget = null;
+}
+function applyBackgroundType(type){
+  if (!backgroundPopoverTarget) return;
+  const clip = backgroundPopoverTarget;
+  pushHistory();
+  if (!clip.background) clip.background = defaultBackground();
+  clip.background.type = type;
+  $('#bgGrid').querySelectorAll('.tp-type-btn').forEach(b=> b.classList.toggle('active', b.dataset.type===type));
+  $('#bgBlurPanel').style.display = type==='blur' ? 'flex' : 'none';
+  $('#bgColorPanel').style.display = type==='color' ? 'flex' : 'none';
+  $('#bgImagePanel').style.display = type==='image' ? 'flex' : 'none';
+  renderFrame(state.playhead); refreshBackgroundButtonState();
+}
+$('#bgBlurSlider').addEventListener('input', e=>{
+  if (!backgroundPopoverTarget || !backgroundPopoverTarget.background) return;
+  backgroundPopoverTarget.background.blurAmount = parseFloat(e.target.value);
+  $('#bgBlurVal').textContent = backgroundPopoverTarget.background.blurAmount + 'px';
+  renderFrame(state.playhead);
+});
+$('#bgBlurSlider').addEventListener('change', ()=>{ pushHistory(); });
+$('#bgColorInput').addEventListener('input', e=>{
+  if (!backgroundPopoverTarget || !backgroundPopoverTarget.background) return;
+  backgroundPopoverTarget.background.color = e.target.value;
+  renderFrame(state.playhead);
+});
+$('#bgColorInput').addEventListener('change', ()=>{ pushHistory(); });
+$('#btnBgImagePick').addEventListener('click', e=>{ e.stopPropagation(); $('#bgImageFileInput').click(); });
+$('#bgImageFileInput').addEventListener('change', async e=>{
+  const file = e.target.files[0]; e.target.value='';
+  if (!file || !backgroundPopoverTarget || !backgroundPopoverTarget.background) return;
+  if (!file.type.startsWith('image/')){ showToast('Please choose an image file.', 'error'); return; }
+  try{
+    const dataUrl = await blobToDataURL(file);
+    pushHistory();
+    backgroundPopoverTarget.background.imageDataUrl = dataUrl;
+    refreshBackgroundImagePreview(backgroundPopoverTarget.background);
+    renderFrame(state.playhead);
+  }catch(err){ showToast('Could not load that image.', 'error'); }
+});
+$('#btnBgImageClear').addEventListener('click', e=>{
+  e.stopPropagation();
+  if (!backgroundPopoverTarget || !backgroundPopoverTarget.background) return;
+  pushHistory();
+  backgroundPopoverTarget.background.imageDataUrl = null;
+  delete bgImgCache[backgroundPopoverTarget.id];
+  refreshBackgroundImagePreview(backgroundPopoverTarget.background);
+  renderFrame(state.playhead);
+});
+$('#bgClose').addEventListener('click', e=>{ e.stopPropagation(); closeBackgroundPopover(); });
+backgroundPopoverEl.addEventListener('click', e=> e.stopPropagation());
+backgroundPopoverEl.addEventListener('mousedown', e=> e.stopPropagation());
+btnBackgroundEl.addEventListener('click', e=>{
+  e.stopPropagation();
+  const clip = getBackgroundTargetForSelection();
+  if (!clip) return;
+  const alreadyOpenForThis = backgroundPopoverEl.style.display==='block' && backgroundPopoverTarget && backgroundPopoverTarget.id===clip.id;
+  if (alreadyOpenForThis) closeBackgroundPopover();
+  else openBackgroundPopover(btnBackgroundEl, clip);
+});
+document.addEventListener('click', closeBackgroundPopover);
+refreshBackgroundButtonState();
+refreshSwitchButtonState();
 
 /* ===================== GUIDE ===================== */
 const guideOverlay = $('#guideOverlay');
